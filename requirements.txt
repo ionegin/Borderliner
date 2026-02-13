@@ -1,0 +1,6 @@
+aiogram
+gspread
+google-auth
+python-dotenv
+openai
+apscheduler
