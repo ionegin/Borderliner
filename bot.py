@@ -1,6 +1,5 @@
 import logging
 import os
-import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -9,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config import BOT_TOKEN, METRICS
+from config import BOT_TOKEN, METRICS, WEBHOOK_BASE_URL
 from storage.sheets import GoogleSheetsStorage
 from services.transcription import transcribe_voice
 
@@ -219,5 +218,36 @@ async def handle_text_note(message: types.Message):
         await message.answer("✅ Сохранил в заметки.")
 
 
+async def on_startup(bot: Bot) -> None:
+    """Устанавливает webhook при запуске (для Render)."""
+    webhook_url = f"{WEBHOOK_BASE_URL.rstrip('/')}/webhook"
+    await bot.set_webhook(webhook_url)
+    logging.info(f"Webhook set: {webhook_url}")
+
+
 if __name__ == "__main__":
-    dp.run_polling(bot)
+    if WEBHOOK_BASE_URL:
+        from aiohttp import web
+        from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+
+        async def _on_startup(app: web.Application) -> None:
+            await on_startup(bot)
+            if not scheduler.running:
+                scheduler.start()
+
+        app = web.Application()
+
+        async def health(_):
+            return web.Response(text="Borderliner Bot OK")
+
+        app.router.add_get("/", health)
+        SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+        setup_application(app, dp, bot=bot)
+        app.on_startup.append(_on_startup)
+
+        port = int(os.getenv("PORT", 8080))
+        web.run_app(app, host="0.0.0.0", port=port)
+    else:
+        if not scheduler.running:
+            scheduler.start()
+        dp.run_polling(bot)

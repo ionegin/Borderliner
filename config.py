@@ -19,6 +19,8 @@ else:
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
+# Render задаёт RENDER_EXTERNAL_URL автоматически (https://xxx.onrender.com)
+WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or ""
 
 if BOT_TOKEN:
     print(f"✅ УСПЕХ! Токен загружен.")
