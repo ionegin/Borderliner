@@ -6,15 +6,9 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 
-print("\n--- ГЛУБОКАЯ ПРОВЕРКА СИСТЕМЫ ---")
-print(f"Рабочая папка: {BASE_DIR}")
-print(f"Список файлов в папке: {os.listdir(BASE_DIR)}")
-
+# Загружаем .env только если он существует (для локальной разработки)
 if env_path.exists():
-    print(f"Файл .env найден! Пытаюсь прочитать...")
     load_dotenv(dotenv_path=env_path, override=True)
-else:
-    print(f"❌ ФАЙЛ .env НЕ НАЙДЕН по пути {env_path}")
 
 # Hugging Face: CREDENTIALS_CONTENT — JSON в переменной, создаём временный файл
 credentials_content = os.getenv("CREDENTIALS_CONTENT")
@@ -24,17 +18,12 @@ if credentials_content:
         f.write(credentials_content)
     os.environ["CREDENTIALS_PATH"] = credentials_path
 
+# Получаем переменные окружения
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
 # Render задаёт RENDER_EXTERNAL_URL автоматически (https://xxx.onrender.com)
-WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or ""
-
-if BOT_TOKEN:
-    print(f"✅ УСПЕХ! Токен загружен.")
-else:
-    print(f"❌ ТОКЕН ВСЕ ЕЩЕ НЕ ВИДЕН")
-print("---------------------------------\n")
+WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 
 GOOGLE_SHEET_ID = "1jLufJWwCXdLARn1i9NCop0NeTYlWH5GUOf4sZLRFyMI"
 
