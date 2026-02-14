@@ -1,3 +1,14 @@
+---
+title: Borderliner Bot
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: docker
+sdk_version: "1.0.0"
+app_file: app.py
+pinned: false
+---
+
 # Borderliner Bot
 
 Telegram бот для отслеживания ежедневных метрик и заметок с голосовыми сообщениями.
