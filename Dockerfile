@@ -19,4 +19,4 @@ RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Команда для запуска
-CMD ["python", "bot.py"]
+CMD ["python", "app.py"]
