@@ -16,6 +16,14 @@ if env_path.exists():
 else:
     print(f"❌ ФАЙЛ .env НЕ НАЙДЕН по пути {env_path}")
 
+# Hugging Face: CREDENTIALS_CONTENT — JSON в переменной, создаём временный файл
+credentials_content = os.getenv("CREDENTIALS_CONTENT")
+if credentials_content:
+    credentials_path = str(BASE_DIR / "secret_credentials.json")
+    with open(credentials_path, "w") as f:
+        f.write(credentials_content)
+    os.environ["CREDENTIALS_PATH"] = credentials_path
+
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"

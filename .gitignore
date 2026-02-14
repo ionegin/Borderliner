@@ -208,6 +208,7 @@ __marimo__/
 
 # Project-specific
 borderliner-credentials.json
+secret_credentials.json
 voice_*.ogg
 temp/
 logs/

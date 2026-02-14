@@ -245,7 +245,7 @@ if __name__ == "__main__":
         setup_application(app, dp, bot=bot)
         app.on_startup.append(_on_startup)
 
-        port = int(os.getenv("PORT", 8080))
+        port = int(os.getenv("PORT", 7860))
         web.run_app(app, host="0.0.0.0", port=port)
     else:
         if not scheduler.running:
