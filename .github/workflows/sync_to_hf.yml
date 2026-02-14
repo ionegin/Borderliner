@@ -1,7 +1,7 @@
 name: Sync to Hugging Face
 on:
   push:
-    branches: [main, master] # Сработает, даже если ветка называется master
+    branches: [main, master]
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,8 +14,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git remote add hf https://huggingface.co/spaces/ionegin/Borderliner
-          echo "$HF_TOKEN" | git remote set-url hf "https://ionegin:$HF_TOKEN@huggingface.co/spaces/ionegin/Borderliner"
-          git push --force hf main
+          git push --force https://ionegin:$HF_TOKEN@huggingface.co/spaces/ionegin/Borderliner main
