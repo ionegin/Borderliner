@@ -46,15 +46,14 @@ async def main():
             print("⚠️ WARNING: Bot token should start with numbers!")
     else:
         print("❌ TELEGRAM_TOKEN not found in environment variables!")
+        return
     
     # Запускаем веб-сервер параллельно
+    print("🌐 Starting web server...")
     server_task = asyncio.create_task(start_web_server())
     
     # Проверяем доступность Telegram API
     try:
-        if not BOT_TOKEN:
-            raise ValueError("TELEGRAM_TOKEN not found")
-            
         print("🔄 Testing Telegram API connection...")
         # Пробуем получить информацию о боте
         me = await bot.get_me()
