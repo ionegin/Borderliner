@@ -23,6 +23,29 @@ class GoogleSheetsStorage:
                 worksheet.update_cell(1, col_idx, h)
                 headers.append(h)
         return headers
+    
+    def check_today_metric(self, user_id, metric_key):
+        """Проверяет есть ли запись за сегодня для этой метрики."""
+        worksheet = self.sh.get_worksheet(0)
+        
+        # Получаем все записи
+        all_records = worksheet.get_all_records()
+        
+        # Сегодняшняя дата
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Ищем запись пользователя за сегодня
+        for record in reversed(all_records):  # reversed чтобы взять последнюю
+            record_date = record.get("created_at", "")[:10]  # Берём только дату
+            record_user = str(record.get("user_id", ""))
+            
+            if record_date == today and record_user == str(user_id):
+                # Нашли запись за сегодня
+                value = record.get(metric_key)
+                if value and value != "":
+                    return value
+        
+        return None
 
     def save_daily(self, user_id, answers, created_at=None, uploaded_at=None):
         worksheet = self.sh.get_worksheet(0)
