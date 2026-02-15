@@ -19,7 +19,7 @@ RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Отладочная информация - ПОКАЖЕТ ЧТО HF ЗАПУСКАЕТ
-RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== APP.PY CONTENT ===" && head -10 /app/app.py && echo "=================="
+RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== APP.PY CONTENT ===" && head -5 /app/app.py && echo "=================="
 
-# Принудительный запуск app.py
-CMD ["sh", "-c", "echo 'Starting app.py...' && python app.py"]
+# Принудительный запуск app.py с FORCE REBUILD флагом
+CMD ["sh", "-c", "echo 'FORCE REBUILD v2.1...' && python app.py"]
