@@ -22,4 +22,4 @@ USER appuser
 RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== TEST.PY CONTENT ===" && head -5 /app/test.py && echo "=================="
 
 # Минимальный тестовый запуск
-ENTRYPOINT ["python", "app3.py"]
+ENTRYPOINT ["sh", "-c", "echo '🔥 ENTRYPOINT = APP3' 1>&2; exec python -u app3.py"]
