@@ -1,9 +1,31 @@
 import os
 import asyncio
 from aiohttp import web
-from bot import bot, dp
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from config import BOT_TOKEN
+
+print("🔄 Starting imports...")
+
+try:
+    from bot import bot, dp
+    print("✅ bot.py imported successfully")
+    print(f"🔧 Bot object: {bot}")
+except Exception as e:
+    print(f"❌ Failed to import bot: {e}")
+    bot = None
+    dp = None
+
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    print("✅ AsyncIOScheduler imported successfully")
+except Exception as e:
+    print(f"❌ Failed to import AsyncIOScheduler: {e}")
+
+try:
+    from config import BOT_TOKEN
+    print("✅ config.py imported successfully")
+    print(f"🔧 BOT_TOKEN from config: {bool(BOT_TOKEN)}")
+except Exception as e:
+    print(f"❌ Failed to import config: {e}")
+    BOT_TOKEN = None
 
 scheduler = AsyncIOScheduler()
 
