@@ -14,7 +14,13 @@ from services.transcription import transcribe_voice
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=BOT_TOKEN)
+# Безопасная инициализация бота
+if BOT_TOKEN:
+    bot = Bot(token=BOT_TOKEN)
+else:
+    bot = None
+    print("❌ BOT_TOKEN is None - bot will not work")
+
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
 scheduler = AsyncIOScheduler()
