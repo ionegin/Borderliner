@@ -1,3 +1,5 @@
+print("🚀 APP.PY STARTED")
+
 import os
 import asyncio
 from aiohttp import web
