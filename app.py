@@ -46,34 +46,47 @@ async def main():
             print("⚠️ WARNING: Bot token should start with numbers!")
     else:
         print("❌ TELEGRAM_TOKEN not found in environment variables!")
-        return
+        print("🔄 Continuing with web server only...")
     
     # Запускаем веб-сервер параллельно
     print("🌐 Starting web server...")
-    server_task = asyncio.create_task(start_web_server())
+    try:
+        server_task = asyncio.create_task(start_web_server())
+        print("✅ Web server task created")
+    except Exception as e:
+        print(f"❌ Failed to start web server: {e}")
+        return
     
     # Проверяем доступность Telegram API
     try:
-        print("🔄 Testing Telegram API connection...")
-        # Пробуем получить информацию о боте
-        me = await bot.get_me()
-        print(f"✅ Bot connected: @{me.username}")
-        print(f"✅ Bot ID: {me.id}")
-        
-        if not scheduler.running:
-            scheduler.start()
-        
-        print("🤖 Starting bot polling...")
-        # Запускаем бота в режиме polling
-        await dp.start_polling(bot, handle_signals=False)
-        
+        if BOT_TOKEN:
+            print("🔄 Testing Telegram API connection...")
+            # Пробуем получить информацию о боте
+            me = await bot.get_me()
+            print(f"✅ Bot connected: @{me.username}")
+            print(f"✅ Bot ID: {me.id}")
+            
+            if not scheduler.running:
+                print("🔄 Starting scheduler...")
+                scheduler.start()
+                print("✅ Scheduler started")
+            
+            print("🤖 Starting bot polling...")
+            # Запускаем бота в режиме polling
+            await dp.start_polling(bot, handle_signals=False)
+        else:
+            print("⏭️ Skipping Telegram bot - no token provided")
+            
     except Exception as e:
         print(f"❌ Cannot connect to Telegram API: {e}")
+        print(f"❌ Error type: {type(e).__name__}")
         print("🔄 Running in demo mode...")
         
         # Демонстрационный режим
         if not scheduler.running:
+            print("🔄 Starting scheduler for demo mode...")
             scheduler.start()
+            print("✅ Demo scheduler started")
             
         print("📊 Bot is running in demo mode.")
         print("🔧 To enable full functionality:")
