@@ -21,5 +21,5 @@ USER appuser
 # Отладочная информация - ПОКАЖЕТ ЧТО HF ЗАПУСКАЕТ
 RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== APP3.PY CONTENT ===" && head -5 /app/app3.py && echo "=================="
 
-# Принудительный запуск app3.py с FORCE REBUILD флагом
-CMD ["sh", "-c", "echo 'FORCE HARD RESET v3.1...' && python app3.py"]
+# Принудительный запуск app3.py как ENTRYPOINT
+ENTRYPOINT ["sh", "-c", "echo 'FORCE HARD RESET v3.1...' && python app3.py"]
