@@ -46,7 +46,7 @@ class GoogleSheetsStorage:
         row = [row_data.get(h, "") for h in headers]
         worksheet.append_row(row)
 
-    def save_note(self, user_id, text, is_voice=False, duration=0, telegram_ts=None, uploaded_at=None):
+    def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual"):
         try:
             worksheet = self.sh.worksheet("Notes")
         except gspread.exceptions.WorksheetNotFound:
