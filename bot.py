@@ -9,7 +9,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, METRICS, WEBHOOK_BASE_URL
-from storage.sheets import GoogleSheetsStorage
+from storage.sheets import GoogleSheetsStorage  # ОПЕЧАТКА!
 from services.transcription import transcribe_voice
 
 logging.basicConfig(level=logging.INFO)
