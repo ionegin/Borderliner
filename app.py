@@ -1,4 +1,4 @@
-print("🚀 APP.PY STARTED")
+print("🚀 APP.PY v2.0 STARTED")
 
 import os
 import asyncio
