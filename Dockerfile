@@ -18,5 +18,8 @@ COPY . .
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
+# Отладочная информация
+RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=================="
+
 # Команда для запуска
 CMD ["python", "app.py"]
