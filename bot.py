@@ -8,7 +8,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config import BOT_TOKEN, METRICS, WEBHOOK_BASE_URL
+from config import BOT_TOKEN, WEBHOOK_BASE_URL
+from metrics import METRICS
 from storage.sheets import GoogleSheetsStorage  # ОПЕЧАТКА!
 from services.transcription import transcribe_voice
 

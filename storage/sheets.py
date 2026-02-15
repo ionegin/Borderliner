@@ -1,5 +1,6 @@
 import gspread
-from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID, METRICS
+from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID
+from metrics import METRICS
 from datetime import datetime
 
 

@@ -26,18 +26,3 @@ CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.jso
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 
 GOOGLE_SHEET_ID = "1jLufJWwCXdLARn1i9NCop0NeTYlWH5GUOf4sZLRFyMI"
-
-# Схема метрик: key = заголовок колонки в таблице
-# format: "number" (min, max) или "yes_no"
-# Добавление нового показателя: добавь запись сюда — колонка и вопрос создадутся автоматически
-# Пример для horny: "horny": {"question": "Horny?", "format": "number", "min": 1, "max": 10}
-METRICS = {
-    "sleep_hours": {"question": "Сколько часов ты спал?", "format": "number", "min": 1, "max": 24},
-    "productivity_hours": {"question": "Продуктивность (часов)?", "format": "number", "min": 1, "max": 24},
-    "meditate_minutes": {"question": "Сколько минут медитировал?", "format": "number", "min": 1, "max": 999},
-    "energy": {"question": "Уровень энергии?", "format": "number", "min": 1, "max": 10},
-    "anxiety": {"question": "Уровень тревоги?", "format": "number", "min": 1, "max": 10},
-    "communication": {"question": "Качество общения?", "format": "number", "min": 1, "max": 10},
-    "smoked": {"question": "Курил сегодня?", "format": "yes_no"},
-    "yoga": {"question": "Йога?", "format": "yes_no"},
-}
