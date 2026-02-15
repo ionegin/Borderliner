@@ -20,6 +20,20 @@ async def debug_info(request):
     }
     return web.json_response(debug_data)
 
+async def start_web_server():
+    """Запуск веб-сервера для health check"""
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    app.router.add_get("/health", health_check)
+    app.router.add_get("/debug", debug_info)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 7860)
+    await site.start()
+    print("🌐 Health check server started on port 7860")
+    print("🔍 Debug info available at: /debug")
+
 async def main():
     print("Starting Borderliner Bot for Hugging Face Spaces...")
     print(f"🔧 Bot token exists: {bool(BOT_TOKEN)}")
@@ -27,22 +41,14 @@ async def main():
     
     if BOT_TOKEN:
         print(f"🔧 Bot token prefix: {BOT_TOKEN[:10]}...")
+        # Проверяем формат токена (должен начинаться с цифр)
+        if not BOT_TOKEN.isdigit():
+            print("⚠️ WARNING: Bot token should start with numbers!")
     else:
         print("❌ TELEGRAM_TOKEN not found in environment variables!")
     
-    # Создаем веб-сервер для health check
-    app = web.Application()
-    app.router.add_get("/", health_check)
-    app.router.add_get("/health", health_check)
-    app.router.add_get("/debug", debug_info)
-    
-    # Запускаем веб-сервер в фоне на порту 8080
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
-    await site.start()
-    print("🌐 Health check server started on port 8080")
-    print("🔍 Debug info available at: /debug")
+    # Запускаем веб-сервер параллельно
+    server_task = asyncio.create_task(start_web_server())
     
     # Проверяем доступность Telegram API
     try:
