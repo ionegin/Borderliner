@@ -61,5 +61,6 @@ async def main():
     else:
         print("❌ TELEGRAM_TOKEN not found!")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# ЗАПУСК ПРИ ИМПОРТЕ ДЛЯ HUGGING FACE
+print("🔥 AUTO-STARTING main() on import...")
+asyncio.create_task(main())
