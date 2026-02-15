@@ -45,6 +45,53 @@ class GoogleSheetsStorage:
 
         row = [row_data.get(h, "") for h in headers]
         worksheet.append_row(row)
+        
+    def check_today_metric(self, user_id, metric_key):
+        """Проверяет есть ли уже запись за сегодня для этой метрики."""
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            headers = worksheet.row_values(1)
+            
+            # Находим колонки user_id и нужной метрики
+            user_id_col = None
+            metric_col = None
+            created_at_col = None
+            
+            for i, header in enumerate(headers):
+                header_lower = header.strip().lower()
+                if header_lower == "user_id":
+                    user_id_col = i + 1
+                elif header_lower == metric_key.lower():
+                    metric_col = i + 1
+                elif header_lower == "created_at":
+                    created_at_col = i + 1
+            
+            if not all([user_id_col, metric_col, created_at_col]):
+                return None
+            
+            # Получаем все данные
+            all_data = worksheet.get_all_values()
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            # Ищем запись за сегодня от этого пользователя
+            for row in all_data[1:]:  # Пропускаем заголовки
+                if len(row) < max(user_id_col, metric_col, created_at_col):
+                    continue
+                    
+                row_user_id = row[user_id_col - 1]
+                row_date = row[created_at_col - 1].split()[0]  # Берем только дату
+                row_metric_value = row[metric_col - 1]
+                
+                if (str(row_user_id) == str(user_id) and 
+                    row_date == today and 
+                    row_metric_value and row_metric_value.strip()):
+                    return row_metric_value
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error checking today's metric: {e}")
+            return None
 
     def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual"):
         try:
