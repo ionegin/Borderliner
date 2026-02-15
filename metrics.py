@@ -1,14 +1,75 @@
 # metrics.py
-# Схема метрик для сбора данных
-# Добавление новой метрики: просто добавь новую запись в этот словарь
 
-METRICS = {
-    "sleep_hours": {"question": "Сколько часов ты спал?", "format": "number", "min": 1, "max": 24},
-    "productivity_hours": {"question": "Продуктивность (часов)?", "format": "number", "min": 1, "max": 24},
-    "meditate_minutes": {"question": "Сколько минут медитировал?", "format": "number", "min": 1, "max": 999},
-    "energy": {"question": "Уровень энергии?", "format": "number", "min": 1, "max": 10},
-    "anxiety": {"question": "Уровень тревоги?", "format": "number", "min": 1, "max": 10},
-    "communication": {"question": "Качество общения?", "format": "number", "min": 1, "max": 10},
-    "smoked": {"question": "Курил сегодня?", "format": "yes_no"},
-    "yoga": {"question": "Йога?", "format": "yes_no"},
+# Шаблоны измерений
+MEASUREMENT_TYPES = {
+    "hours": {
+        "format": "number",
+        "min": 1,
+        "max": 24,
+    },
+    "minutes": {
+        "format": "number",
+        "min": 0,
+        "max": 999,
+    },
+    "scale_10": {
+        "format": "number",
+        "min": 1,
+        "max": 10,
+    },
+    "yes_no": {
+        "format": "yes_no",
+    },
+    "note": {
+        "format": "text",
+        "optional": True,
+    }
 }
+
+# Метрики для daily опроса
+METRICS = {
+    "sleep_hours": {
+        "question": "Сколько часов ты спал?",
+        "measurement": "hours"
+    },
+    "productivity_hours": {
+        "question": "Продуктивность (часов)?",
+        "measurement": "hours"
+    },
+    "meditate_minutes": {
+        "question": "Сколько минут медитировал?",
+        "measurement": "minutes"
+    },
+    "energy": {
+        "question": "Уровень энергии?",
+        "measurement": "scale_10"
+    },
+    "anxiety": {
+        "question": "Уровень тревоги?",
+        "measurement": "scale_10"
+    },
+    "communication": {
+        "question": "Качество общения?",
+        "measurement": "scale_10"
+    },
+    "smoked": {
+        "question": "Курил сегодня?",
+        "measurement": "yes_no"
+    },
+    "yoga": {
+        "question": "Йога?",
+        "measurement": "yes_no"
+    },
+    "mood_note": {
+        "question": "Что тебя беспокоит? (текст/войс/пропустить)",
+        "measurement": "note"
+    }
+}
+
+
+# Вспомогательная функция для получения конфига measurement
+def get_measurement_config(metric_key):
+    """Возвращает полный конфиг measurement для метрики."""
+    metric = METRICS[metric_key]
+    measurement_type = metric["measurement"]
+    return MEASUREMENT_TYPES[measurement_type]

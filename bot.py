@@ -9,8 +9,8 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, WEBHOOK_BASE_URL
-from metrics import METRICS
-from storage.sheets import GoogleSheetsStorage  # ОПЕЧАТКА!
+from metrics import METRICS, MEASUREMENT_TYPES, get_measurement_config
+from storage.sheets import GoogleSheetsStorage
 from services.transcription import transcribe_voice
 
 logging.basicConfig(level=logging.INFO)
@@ -45,18 +45,35 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     metrics_to_ask = data["metrics_to_ask"]
     if idx >= len(metrics_to_ask):
         return False
+    
     key = metrics_to_ask[idx]
-    cfg = METRICS[key]
-    question = cfg["question"]
-    if cfg.get("format") == "yes_no":
+    metric = METRICS[key]
+    measurement_cfg = get_measurement_config(key)
+    question = metric["question"]
+    
+    # yes_no формат
+    if measurement_cfg["format"] == "yes_no":
         await bot.send_message(
             chat_id,
             f"📊 {question}",
             reply_markup=get_yes_no_keyboard(key),
         )
+    # note формат (текст с возможностью пропуска)
+    elif measurement_cfg["format"] == "text":
+        await bot.send_message(
+            chat_id,
+            f"📊 {question}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Пропустить", callback_data=f"metric:{key}:skip")]
+            ])
+        )
+    # number формат
     else:
-        rng = f" ({cfg['min']}-{cfg['max']})" if cfg.get("min") is not None else ""
+        min_val = measurement_cfg.get("min")
+        max_val = measurement_cfg.get("max")
+        rng = f" ({min_val}-{max_val})" if min_val is not None else ""
         await bot.send_message(chat_id, f"📊 {question}{rng}")
+    
     return True
 
 
@@ -120,20 +137,38 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     metrics_to_ask = data["metrics_to_ask"]
     answers = data["answers"]
     idx = data["current_idx"]
+    
     if idx >= len(metrics_to_ask):
         return
+    
     key = metrics_to_ask[idx]
-    cfg = METRICS[key]
-    if cfg.get("format") == "yes_no":
+    measurement_cfg = get_measurement_config(key)
+    
+    # yes_no — только кнопки
+    if measurement_cfg["format"] == "yes_no":
         await message.answer("Используй кнопки ↑")
         return
-    ok, err = _validate_number(message.text.strip(), cfg)
-    if not ok:
-        await message.answer(f"❌ {err}")
-        return
-    answers[key] = message.text.strip()
+    
+    # note — текст или пропуск
+    if measurement_cfg["format"] == "text":
+        text = message.text.strip()
+        # Пустое сообщение = пропуск
+        if not text:
+            answers[key] = None
+        else:
+            answers[key] = text
+    # number — валидация
+    else:
+        ok, err = _validate_number(message.text.strip(), measurement_cfg)
+        if not ok:
+            await message.answer(f"❌ {err}")
+            return
+        answers[key] = message.text.strip()
+    
+    # Переход к следующему вопросу
     idx += 1
     await state.update_data(answers=answers, current_idx=idx)
+    
     if idx < len(metrics_to_ask):
         await ask_next_metric(message.chat.id, state, idx)
     else:
@@ -154,21 +189,43 @@ async def handle_metrics_callback(callback: CallbackQuery, state: FSMContext):
     if len(parts) != 3:
         await callback.answer()
         return
+    
     _, key, value = parts
-    if key not in METRICS or value not in ("yes", "no"):
+    
+    if key not in METRICS:
         await callback.answer()
         return
+    
+    measurement_cfg = get_measurement_config(key)
+    
+    # Проверка валидности значения
+    if measurement_cfg["format"] == "yes_no" and value not in ("yes", "no"):
+        await callback.answer()
+        return
+    
+    if measurement_cfg["format"] == "text" and value != "skip":
+        await callback.answer()
+        return
+    
     data = await state.get_data()
     metrics_to_ask = data["metrics_to_ask"]
     answers = data["answers"]
     idx = data["current_idx"]
+    
     if idx >= len(metrics_to_ask) or metrics_to_ask[idx] != key:
         await callback.answer()
         return
-    answers[key] = value
+    
+    # Сохранение ответа
+    if value == "skip":
+        answers[key] = None
+    else:
+        answers[key] = value
+    
     idx += 1
     await state.update_data(answers=answers, current_idx=idx)
     await callback.answer()
+    
     if idx < len(metrics_to_ask):
         await ask_next_metric(callback.message.chat.id, state, idx)
     else:
@@ -180,6 +237,76 @@ async def handle_metrics_callback(callback: CallbackQuery, state: FSMContext):
             uploaded_at=created_at,
         )
         await callback.message.answer("✅ Метрики записаны в Google Sheets! Увидимся завтра.")
+        await state.clear()
+
+
+@dp.message(Survey.waiting_for_metrics, F.voice)
+async def handle_metrics_voice(message: types.Message, state: FSMContext):
+    """Обработка войса в режиме опроса (только для note-вопросов)."""
+    data = await state.get_data()
+    metrics_to_ask = data["metrics_to_ask"]
+    answers = data["answers"]
+    idx = data["current_idx"]
+    
+    if idx >= len(metrics_to_ask):
+        return
+    
+    key = metrics_to_ask[idx]
+    measurement_cfg = get_measurement_config(key)
+    
+    # Войс только для note-вопросов
+    if measurement_cfg["format"] != "text":
+        await message.answer("📊 Для этого вопроса отправь текст или используй кнопки")
+        return
+    
+    # Транскрибируем
+    msg_wait = await message.answer("🎙 Расшифровываю...")
+    if not os.path.exists("temp"):
+        os.makedirs("temp")
+    
+    file_info = await bot.get_file(message.voice.file_id)
+    file_path = f"temp/{message.voice.file_id}.ogg"
+    await bot.download_file(file_info.file_path, file_path)
+    
+    text = await transcribe_voice(file_path)
+    
+    # Сохраняем как отдельную заметку с source=checkup_voice
+    telegram_ts = message.date
+    uploaded_at = datetime.utcnow()
+    storage.save_note(
+        message.from_user.id,
+        text,
+        is_voice=True,
+        duration=message.voice.duration,
+        telegram_ts=telegram_ts,
+        uploaded_at=uploaded_at,
+        source="checkup_voice"
+    )
+    
+    # Удаляем временный файл
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    
+    # Подтверждаем и продолжаем опрос
+    await msg_wait.edit_text(f"✅ Войс сохранён: {text[:100]}...")
+    
+    # Сохраняем пометку что ответ дан
+    answers[key] = "[voice_note]"
+    
+    idx += 1
+    await state.update_data(answers=answers, current_idx=idx)
+    
+    if idx < len(metrics_to_ask):
+        await ask_next_metric(message.chat.id, state, idx)
+    else:
+        created_at = datetime.now()
+        storage.save_daily(
+            message.from_user.id,
+            answers,
+            created_at=created_at,
+            uploaded_at=created_at,
+        )
+        await message.answer("✅ Метрики записаны в Google Sheets! Увидимся завтра.")
         await state.clear()
 
 
@@ -203,6 +330,7 @@ async def handle_voice(message: types.Message):
         duration=message.voice.duration,
         telegram_ts=telegram_ts,
         uploaded_at=uploaded_at,
+        source="voice"
     )
 
     await msg_wait.edit_text(f"📝 **Заметка:**\n{text}")
@@ -221,6 +349,7 @@ async def handle_text_note(message: types.Message):
             is_voice=False,
             telegram_ts=telegram_ts,
             uploaded_at=uploaded_at,
+            source="manual"
         )
         await message.answer("✅ Сохранил в заметки.")
 
@@ -249,7 +378,7 @@ if __name__ == "__main__":
 
         app.router.add_get("/", health)
         SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
-        setup_application(app, dp, bot=bot)
+        setup_application(app, dp=dp, bot=bot)
         app.on_startup.append(_on_startup)
 
         port = int(os.getenv("PORT", 7860))
