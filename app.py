@@ -1,4 +1,4 @@
-print("🚀 APP3.PY v3.0 - NEW FILE TO BREAK CACHE")
+print("TEST RUN MY APP")
 
 import os
 import asyncio
