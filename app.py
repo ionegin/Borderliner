@@ -59,6 +59,7 @@ async def start_web_server():
     print("🔍 Debug info available at: /debug")
 
 async def main():
+    print("🚀 MAIN FUNCTION STARTED")
     print("Starting Borderliner Bot for Hugging Face Spaces...")
     print(f"🔧 Bot token exists: {bool(BOT_TOKEN)}")
     print(f"🔧 Bot token length: {len(BOT_TOKEN) if BOT_TOKEN else 0}")
@@ -80,6 +81,8 @@ async def main():
     except Exception as e:
         print(f"❌ Failed to start web server: {e}")
         return
+    
+    print("🔍 About to enter Telegram API test...")
     
     # Проверяем доступность Telegram API
     try:
