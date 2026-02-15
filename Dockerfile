@@ -18,8 +18,8 @@ COPY . .
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Отладочная информация
-RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=================="
+# Отладочная информация - ПОКАЖЕТ ЧТО HF ЗАПУСКАЕТ
+RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== APP.PY CONTENT ===" && head -10 /app/app.py && echo "=================="
 
-# Команда для запуска
-CMD ["python", "app.py"]
+# Принудительный запуск app.py
+CMD ["sh", "-c", "echo 'Starting app.py...' && python app.py"]
