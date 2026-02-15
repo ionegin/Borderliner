@@ -19,7 +19,7 @@ RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Отладочная информация
-RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== TEST.PY CONTENT ===" && head -5 /app/test.py && echo "=================="
+RUN echo "=== DOCKER DEBUG ===" && ls -la /app && echo "=== APP.PY CONTENT ===" && head -5 /app/app.py && echo "=================="
 
 # Минимальный тестовый запуск
-ENTRYPOINT ["sh", "-c", "echo '🔥 ENTRYPOINT = APP3' 1>&2; exec python -u app.py"]
+ENTRYPOINT ["sh", "-c", "echo '🔥 ENTRYPOINT = APP' 1>&2; exec python -u app.py"]
