@@ -1,30 +1,31 @@
 import logging
-import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from datetime import datetime
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime, timedelta
 
 from config import BOT_TOKEN, WEBHOOK_BASE_URL
 from metrics import METRICS, get_measurement_config
 from storage.sheets import GoogleSheetsStorage
-from services.transcription import transcribe_voice
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
-scheduler = AsyncIOScheduler()
 
-# Метрики, для которых показываем накопленное значение
 SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
 CHANGE_METRICS = ['smoked', 'yoga']
 
 class Survey(StatesGroup):
     waiting_for_metrics = State()
+
+def get_logical_date(dt: datetime):
+    # Порог 6 утра
+    if dt.hour < 6:
+        return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
+    return dt.strftime("%Y-%m-%d")
 
 async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     data = await state.get_data()
@@ -36,20 +37,19 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     cfg = get_measurement_config(key)
     base_question = metric["question"]
     
-    # Проверка существующих данных за сегодня
-    existing_val = storage.check_today_metric(chat_id, key)
+    # Получаем накопленное значение за ЛОГИЧЕСКИЙ день
+    l_date = data.get("logical_date")
+    existing_val = storage.check_today_metric(chat_id, key, l_date)
     
-    # Формируем динамический текст вопроса, сохраняя оригинальный вопрос
-    if existing_val is not None and str(existing_val).strip() != "":
+    question = base_question
+    if existing_val is not None:
         if key in SUM_METRICS:
             unit = "ч." if "hours" in key else "мин."
-            question = f"{base_question}\n(Уже записано: {existing_val} {unit}. Сколько ПРИБАВИТЬ?)"
+            # Округляем до 1 знака, если это число
+            val_display = round(float(existing_val), 1) if isinstance(existing_val, (int, float)) else existing_val
+            question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
         elif key in CHANGE_METRICS:
-            question = f"{base_question}\n(Твой текущий ответ: {existing_val}. Изменить?)"
-        else:
-            question = base_question
-    else:
-        question = base_question
+            question = f"{base_question}\n(Текущий ответ: {existing_val}. Изменить?)"
 
     if cfg["format"] == "yes_no":
         kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -68,7 +68,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
 
 @dp.message(Command("daily"))
 async def start_daily(message: types.Message, state: FSMContext):
-    await state.update_data(metrics_to_ask=list(METRICS.keys()), answers={}, current_idx=0)
+    l_date = get_logical_date(message.date)
+    await state.update_data(metrics_to_ask=list(METRICS.keys()), answers={}, current_idx=0, logical_date=l_date)
     await state.set_state(Survey.waiting_for_metrics)
     await ask_next_metric(message.chat.id, state, 0)
 
@@ -79,7 +80,6 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     key = data["metrics_to_ask"][idx]
     
     answers[key] = message.text.strip()
-    
     idx += 1
     await state.update_data(answers=answers, current_idx=idx)
     if not await ask_next_metric(message.chat.id, state, idx):
@@ -100,26 +100,24 @@ async def handle_metrics_callback(callback: CallbackQuery, state: FSMContext):
 
 async def finish_survey(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    now = datetime.now()
+    created_at = message.date 
+    logical_day = data.get("logical_date")
     
-    # Date - в первой колонке, как ты просил
     final_row = {
-        "Date": now.strftime("%Y-%m-%d"),
-        "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "uploaded_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "user_id": message.chat.id
+        "Date": logical_day,
+        "created_at": created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_id": str(message.chat.id)
     }
     final_row.update(data["answers"])
     
     storage.save_daily(message.chat.id, final_row)
-    
-    await message.answer("✅ Данные добавлены!")
+    await message.answer(f"✅ Данные сохранены за {logical_day}!")
     await state.clear()
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("🧠 Бот запущен. Жми /daily")
+    await message.answer("🧠 Borderliner System. /daily — запуск.")
 
 if __name__ == "__main__":
-    if not WEBHOOK_BASE_URL:
-        dp.run_polling(bot)
+    dp.run_polling(bot)
