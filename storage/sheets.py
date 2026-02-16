@@ -67,7 +67,7 @@ class GoogleSheetsStorage:
             print(f"Колонка {metric_key} не найдена")
     
     def check_today_metric(self, user_id, metric_key):
-        """Проверяет есть ли запись за сегодня для этой метрики."""
+        """Возвращает сумму всех записей за сегодня для указанной метрики."""
         worksheet = self.sh.get_worksheet(0)
         
         # Получаем все записи
@@ -76,8 +76,10 @@ class GoogleSheetsStorage:
         # Сегодняшняя дата
         today = datetime.now().strftime("%Y-%m-%d")
         
-        # Ищем запись пользователя за сегодня
-        for record in reversed(all_records):  # reversed чтобы взять последнюю
+        # Суммируем все значения за сегодня для этого пользователя
+        total = 0.0
+        
+        for record in all_records:
             record_date = record.get("created_at", "")[:10]  # Берём только дату
             record_user = str(record.get("user_id", ""))
             
@@ -85,9 +87,14 @@ class GoogleSheetsStorage:
                 # Нашли запись за сегодня
                 value = record.get(metric_key)
                 if value and value != "":
-                    return value
+                    try:
+                        # Пытаемся преобразовать в число и сложить
+                        total += float(value)
+                    except (ValueError, TypeError):
+                        # Если не число, игнорируем
+                        continue
         
-        return None
+        return total if total > 0 else 0
 
     def save_daily(self, user_id, answers, created_at=None, uploaded_at=None):
         worksheet = self.sh.get_worksheet(0)
