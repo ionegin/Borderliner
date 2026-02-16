@@ -23,6 +23,48 @@ class GoogleSheetsStorage:
                 worksheet.update_cell(1, col_idx, h)
                 headers.append(h)
         return headers
+
+    # В sheets.py добавь этот метод в класс GoogleSheetsStorage
+
+    def get_today_row_index(self, user_id):
+        """Находит индекс строки за сегодня для конкретного юзера."""
+        worksheet = self.sh.get_worksheet(0)
+        records = worksheet.get_all_records()
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        # Ищем с конца, чтобы найти самую свежую запись
+        for i, record in enumerate(reversed(records), 1):
+            if str(record.get("user_id")) == str(user_id) and record.get("created_at", "").startswith(today):
+                return len(records) - i + 2 # +2 т.к. индексация с 1 и есть заголовок
+        return None
+
+    def update_today_metric(self, user_id, metric_key, new_value, mode="overwrite"):
+        """Обновляет значение в существующей строке за сегодня."""
+        worksheet = self.sh.get_worksheet(0)
+        row_idx = self.get_today_row_index(user_id)
+        
+        if not row_idx:
+            # Если строки нет, просто создаем новую (fallback)
+            self.save_daily(user_id, {metric_key: new_value})
+            return
+
+        headers = worksheet.row_values(1)
+        try:
+            col_idx = headers.index(metric_key) + 1
+            
+            if mode == "add":
+                current_val = worksheet.cell(row_idx, col_idx).value or 0
+                # Пытаемся сложить, если это числа
+                try:
+                    final_value = float(current_val) + float(new_value)
+                except ValueError:
+                    final_value = new_value # Если не числа, просто перезаписываем
+            else:
+                final_value = new_value
+
+            worksheet.update_cell(row_idx, col_idx, final_value)
+        except ValueError:
+            print(f"Колонка {metric_key} не найдена")
     
     def check_today_metric(self, user_id, metric_key):
         """Проверяет есть ли запись за сегодня для этой метрики."""

@@ -4,7 +4,7 @@
 MEASUREMENT_TYPES = {
     "hours": {
         "format": "number",
-        "min": 1,
+        "min": 0,
         "max": 24,
     },
     "minutes": {
@@ -14,7 +14,7 @@ MEASUREMENT_TYPES = {
     },
     "scale_10": {
         "format": "number",
-        "min": 1,
+        "min": 0,
         "max": 10,
     },
     "yes_no": {

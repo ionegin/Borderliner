@@ -34,7 +34,7 @@ async def start_web_server():
 
 async def main():
     print("🚀 APP3.PY MAIN FUNCTION STARTED")
-    print("Starting Borderliner Bot for Hugging Face Spaces...")
+    print("Starting Borderliner Bot...")
     print(f"🔧 Bot token exists: {bool(BOT_TOKEN)}")
     
     if BOT_TOKEN:
@@ -61,6 +61,5 @@ async def main():
     else:
         print("❌ TELEGRAM_TOKEN not found!")
 
-# ЗАПУСК ЧЕРЕЗ asyncio.run() ДЛЯ HUGGING FACE
 print("🔥 AUTO-STARTING main() via asyncio.run()...")
 asyncio.run(main())

@@ -10,7 +10,7 @@ env_path = BASE_DIR / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
 
-# Hugging Face: CREDENTIALS_CONTENT — JSON в переменной, создаём временный файл
+# CREDENTIALS_CONTENT — JSON в переменной, создаём временный файл
 credentials_content = os.getenv("CREDENTIALS_CONTENT")
 if credentials_content:
     credentials_path = str(BASE_DIR / "secret_credentials.json")
