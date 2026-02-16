@@ -19,7 +19,7 @@ dp = Dispatcher()
 storage = GoogleSheetsStorage()
 scheduler = AsyncIOScheduler()
 
-# Группируем метрики по логике обработки
+# Метрики, для которых показываем накопленное значение
 SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
 CHANGE_METRICS = ['smoked', 'yoga']
 
@@ -34,18 +34,22 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     key = metrics_to_ask[idx]
     metric = METRICS[key]
     cfg = get_measurement_config(key)
-    question = metric["question"]
+    base_question = metric["question"]
     
     # Проверка существующих данных за сегодня
     existing_val = storage.check_today_metric(chat_id, key)
     
-    # Формируем динамический вопрос
+    # Формируем динамический текст вопроса, сохраняя оригинальный вопрос
     if existing_val is not None and str(existing_val).strip() != "":
         if key in SUM_METRICS:
             unit = "ч." if "hours" in key else "мин."
-            question = f"Уже записано: {existing_val} {unit}. Сколько ПРИБАВИТЬ? (0 — не прибавлять)"
+            question = f"{base_question}\n(Уже записано: {existing_val} {unit}. Сколько ПРИБАВИТЬ?)"
         elif key in CHANGE_METRICS:
-            question = f"Ранее вы ответили '{existing_val}'. Изменить ответ?"
+            question = f"{base_question}\n(Твой текущий ответ: {existing_val}. Изменить?)"
+        else:
+            question = base_question
+    else:
+        question = base_question
 
     if cfg["format"] == "yes_no":
         kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -74,7 +78,6 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     idx, answers = data["current_idx"], data["answers"]
     key = data["metrics_to_ask"][idx]
     
-    # Сохраняем введенное значение
     answers[key] = message.text.strip()
     
     idx += 1
@@ -99,27 +102,24 @@ async def finish_survey(message: types.Message, state: FSMContext):
     data = await state.get_data()
     now = datetime.now()
     
-    # 1. Формируем словарь для записи. Date - самая первая колонка.
+    # Date - в первой колонке, как ты просил
     final_row = {
         "Date": now.strftime("%Y-%m-%d"),
         "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "uploaded_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "user_id": message.chat.id
     }
-    # Добавляем ответы пользователя
     final_row.update(data["answers"])
     
-    # 2. Сохраняем в Sheets (просто добавляем новую строку)
     storage.save_daily(message.chat.id, final_row)
     
-    await message.answer("✅ Данные успешно добавлены в таблицу!")
+    await message.answer("✅ Данные добавлены!")
     await state.clear()
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("🧠 Borderliner Bot. Используй /daily для сбора метрик.")
+    await message.answer("🧠 Бот запущен. Жми /daily")
 
-# Включаем поллинг, если нет вебхука
 if __name__ == "__main__":
     if not WEBHOOK_BASE_URL:
         dp.run_polling(bot)
