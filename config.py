@@ -26,3 +26,12 @@ CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.jso
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 
 GOOGLE_SHEET_ID = "1jLufJWwCXdLARn1i9NCop0NeTYlWH5GUOf4sZLRFyMI"
+
+# Настройки напоминаний (время в UTC+2 Cairo)
+from datetime import time
+REMINDERS = [
+    {'time': time(8, 0), 'type': 'morning'},   # Утреннее напоминание
+    {'time': time(20, 45), 'type': 'evening'}, # Вечернее напоминание
+    # Добавляй новые здесь:
+    # {'time': time(14, 0), 'type': 'afternoon'},
+]

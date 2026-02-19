@@ -9,13 +9,15 @@ from datetime import datetime, timedelta
 from config import BOT_TOKEN, WEBHOOK_BASE_URL
 from metrics import METRICS, get_measurement_config
 from storage.sheets import GoogleSheetsStorage
+from menu import render_menu
+from handlers import handle_start, handle_menu, handle_edit_history, handle_edit_date_callback
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
 
-SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
+SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
 CHANGE_METRICS = ['smoked', 'yoga']
 
 class Survey(StatesGroup):
@@ -42,28 +44,40 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     existing_val = storage.check_today_metric(chat_id, key, l_date)
     
     question = base_question
+    buttons_row = []
+    
     if existing_val is not None:
         if key in SUM_METRICS:
-            unit = "ч." if "hours" in key else "мин."
-            # Округляем до 1 знака, если это число
+            unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
             val_display = round(float(existing_val), 1) if isinstance(existing_val, (int, float)) else existing_val
             question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
+            # Кнопка "Оставить"
+            buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
         elif key in CHANGE_METRICS:
             question = f"{base_question}\n(Текущий ответ: {existing_val}. Изменить?)"
+            buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
 
     if cfg["format"] == "yes_no":
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Да", callback_data=f"m:{key}:yes"),
-            InlineKeyboardButton(text="Нет", callback_data=f"m:{key}:no")
-        ]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Да", callback_data=f"m:{key}:yes"),
+                InlineKeyboardButton(text="Нет", callback_data=f"m:{key}:no")
+            ],
+            buttons_row if buttons_row else []
+        ])
         await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
     elif cfg["format"] == "text":
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
-        ]])
+        kb_rows = [[InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")]]
+        if buttons_row:
+            kb_rows.append(buttons_row)
+        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
         await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
     else:
-        await bot.send_message(chat_id, f"📊 {question}")
+        if buttons_row:
+            kb = InlineKeyboardMarkup(inline_keyboard=[buttons_row])
+            await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
+        else:
+            await bot.send_message(chat_id, f"📊 {question}")
     return True
 
 @dp.message(Command("daily"))
@@ -91,7 +105,14 @@ async def handle_metrics_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     answers, idx = data["answers"], data["current_idx"]
     
-    answers[key] = None if value == "skip" else value
+    if value == "keep":
+        # Не записываем ничего (оставляем как есть)
+        answers[key] = None
+    elif value == "skip":
+        answers[key] = None
+    else:
+        answers[key] = value
+    
     idx += 1
     await state.update_data(answers=answers, current_idx=idx)
     await callback.answer()
@@ -112,12 +133,32 @@ async def finish_survey(message: types.Message, state: FSMContext):
     final_row.update(data["answers"])
     
     storage.save_daily(message.chat.id, final_row)
-    await message.answer(f"✅ Данные сохранены за {logical_day}!")
+    
+    # Показываем главное меню после опроса
+    keyboard = render_menu('main')
+    await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=keyboard)
     await state.clear()
 
+# Регистрируем handlers из handlers.py
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("🧠 Borderliner System. /daily — запуск.")
+    await handle_start(message)
+
+@dp.message(F.text == "📝 МЕНЮ")
+async def menu_button(message: types.Message):
+    await handle_menu(message)
+
+@dp.message(F.text == "📅 ИСТОРИЯ")
+async def history_button(message: types.Message, state: FSMContext):
+    await handle_edit_history(message, state)
+
+@dp.message(F.text == "📊 ПРОЙТИ ОПРОС")
+async def daily_button(message: types.Message, state: FSMContext):
+    await start_daily(message, state)
+
+@dp.callback_query(F.data.startswith("edit_date:"))
+async def edit_date_callback(callback: CallbackQuery, state: FSMContext):
+    await handle_edit_date_callback(callback, state)
 
 if __name__ == "__main__":
     dp.run_polling(bot)

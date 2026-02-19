@@ -23,6 +23,11 @@ MEASUREMENT_TYPES = {
     "note": {
         "format": "text",
         "optional": True,
+    },
+    "count": {
+        "format": "number",
+        "min": 0,
+        "max": 20,
     }
 }
 
@@ -39,6 +44,10 @@ METRICS = {
     "meditate_minutes": {
         "question": "Сколько минут медитировал?",
         "measurement": "minutes"
+    },
+    "meals": {
+        "question": "Сколько раз ел?",
+        "measurement": "count"
     },
     "energy": {
         "question": "Уровень энергии?",
