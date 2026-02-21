@@ -1,4 +1,4 @@
-print("RUN MY APP TEST - DEPLOYMENT VERIFICATION")
+print("TEST RUN MY APP")
 
 import os
 import asyncio

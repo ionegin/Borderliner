@@ -11,6 +11,8 @@ from metrics import METRICS, get_measurement_config
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
 from handlers import handle_start, handle_menu, handle_edit_history, handle_edit_date_callback
+from services.transcription import transcribe_voice
+import os
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
@@ -41,7 +43,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     
     # Получаем накопленное значение за ЛОГИЧЕСКИЙ день
     l_date = data.get("logical_date")
-    existing_val = storage.check_today_metric(chat_id, key, l_date)
+    existing = data.get("existing", {})
+    existing_val = existing.get(key)
     
     question = base_question
     buttons_row = []
@@ -83,7 +86,17 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
 @dp.message(Command("daily"))
 async def start_daily(message: types.Message, state: FSMContext):
     l_date = get_logical_date(message.date)
-    await state.update_data(metrics_to_ask=list(METRICS.keys()), answers={}, current_idx=0, logical_date=l_date)
+    
+    # Загружаем все существующие значения за день ОДНИМ запросом
+    existing = storage.get_day_data(message.chat.id, l_date)
+    
+    await state.update_data(
+        metrics_to_ask=list(METRICS.keys()),
+        answers={},
+        current_idx=0,
+        logical_date=l_date,
+        existing=existing  # ← кэш
+    )
     await state.set_state(Survey.waiting_for_metrics)
     await ask_next_metric(message.chat.id, state, 0)
 
@@ -124,6 +137,10 @@ async def finish_survey(message: types.Message, state: FSMContext):
     created_at = message.date 
     logical_day = data.get("logical_date")
     
+    # ЛОГ 1: что пришло из FSM
+    print(f"[SURVEY] logical_day={logical_day}")
+    print(f"[SURVEY] raw answers={data['answers']}")
+    
     final_row = {
         "Date": logical_day,
         "created_at": created_at.strftime("%Y-%m-%d %H:%M:%S"),
@@ -131,6 +148,9 @@ async def finish_survey(message: types.Message, state: FSMContext):
         "user_id": str(message.chat.id)
     }
     final_row.update(data["answers"])
+    
+    # ЛОГ 2: итоговый словарь перед записью
+    print(f"[SURVEY] final_row={final_row}")
     
     storage.save_daily(message.chat.id, final_row)
     
@@ -159,6 +179,35 @@ async def daily_button(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("edit_date:"))
 async def edit_date_callback(callback: CallbackQuery, state: FSMContext):
     await handle_edit_date_callback(callback, state)
+
+@dp.message(F.voice)
+async def handle_voice(message: types.Message):
+    print(f"[VOICE] received voice from {message.chat.id}")
+    try:
+        file = await bot.get_file(message.voice.file_id)
+        path = f"voice_{message.voice.file_id}.ogg"
+        await bot.download_file(file.file_path, path)
+        print(f"[VOICE] downloaded to {path}")
+
+        text = await transcribe_voice(path)
+        print(f"[VOICE] transcribed: {text}")
+
+        storage.save_note(
+            user_id=message.chat.id,
+            text=text,
+            is_voice=True,
+            duration=message.voice.duration,
+            telegram_ts=message.date,
+            uploaded_at=datetime.now()
+        )
+        await message.answer(f"🎙️ Записал заметку:\n_{text}_", parse_mode="Markdown")
+
+    except Exception as e:
+        print(f"[VOICE] ERROR: {e}")
+        await message.answer("❌ Не удалось расшифровать голосовое")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 if __name__ == "__main__":
     dp.run_polling(bot)
