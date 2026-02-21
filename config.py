@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+print(f"DEBUG CREDENTIALS_CONTENT exists: {bool(os.getenv('CREDENTIALS_CONTENT'))}")
+print(f"DEBUG CREDENTIALS_PATH: {os.getenv('CREDENTIALS_PATH')}")
+print(f"DEBUG CREDENTIALS_FILE will be: {os.getenv('CREDENTIALS_PATH') or 'borderliner-credentials.json'}")
+
 # Определяем папку, где лежит этот файл
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
@@ -18,10 +22,12 @@ if credentials_content:
         f.write(credentials_content)
     os.environ["CREDENTIALS_PATH"] = credentials_path
 
+CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
+
 # Получаем переменные окружения
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
-CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
+
 # Render задаёт RENDER_EXTERNAL_URL автоматически (https://xxx.onrender.com)
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 

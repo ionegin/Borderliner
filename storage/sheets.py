@@ -1,6 +1,6 @@
 import gspread
 from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class GoogleSheetsStorage:
     def __init__(self):
@@ -8,38 +8,27 @@ class GoogleSheetsStorage:
         self.sh = self.gc.open_by_key(GOOGLE_SHEET_ID)
 
     def check_today_metric(self, user_id, metric_key, logical_date):
-        """
-        Находит все записи за логическую дату и:
-        - Суммирует (для числовых метрик)
-        - Возвращает последнее (для остальных)
-        """
         try:
             worksheet = self.sh.get_worksheet(0)
-            # Читаем всё как список списков, чтобы не зависеть от пустых ячеек в словарях
             all_values = worksheet.get_all_values()
             if not all_values:
                 return None
-            
-            headers = all_values[0]
+
+            headers = [h.strip() for h in all_values[0]]
             try:
                 date_idx = headers.index("Date")
                 user_idx = headers.index("user_id")
                 metric_idx = headers.index(metric_key)
             except ValueError:
-                return None # Колонка не найдена
+                return None
 
             matching_values = []
-            
-            # Проходим по всем строкам (пропуская заголовки)
             for row in all_values[1:]:
-                # Проверяем длину строки, чтобы избежать IndexError
                 if len(row) <= max(date_idx, user_idx, metric_idx):
                     continue
-                    
                 row_date = row[date_idx].strip()
                 row_user = str(row[user_idx]).strip()
                 row_val = row[metric_idx].strip()
-                
                 if row_date == logical_date and row_user == str(user_id):
                     if row_val:
                         matching_values.append(row_val)
@@ -47,46 +36,88 @@ class GoogleSheetsStorage:
             if not matching_values:
                 return None
 
-            # ЛОГИКА СУММИРОВАНИЯ
             SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
             if metric_key in SUM_METRICS:
                 total = 0.0
                 for v in matching_values:
                     try:
-                        # Заменяем запятую на точку для float
                         total += float(v.replace(',', '.'))
                     except ValueError:
                         continue
                 return total if total > 0 else None
-            
-            # Для остальных (yes/no) возвращаем последнее значение
+
             return matching_values[-1]
 
         except Exception as e:
-            print(f"Error in check_today_metric: {e}")
+            print(f"[SHEETS] Error in check_today_metric: {e}")
             return None
 
-    def save_daily(self, user_id, data):
-        """Добавляет новую строку, строго соблюдая порядок заголовков."""
+    def get_day_data(self, user_id, logical_date):
+        """Возвращает все метрики за день одним запросом"""
         try:
             worksheet = self.sh.get_worksheet(0)
-            headers = worksheet.row_values(1)
-            row_to_append = [data.get(h, "") for h in headers]
-            worksheet.append_row(row_to_append)
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                return {}
+
+            headers = [h.strip() for h in all_values[0]]
+            date_idx = headers.index("Date")
+            user_idx = headers.index("user_id")
+
+            result = {}
+            for row in all_values[1:]:
+                if len(row) <= max(date_idx, user_idx):
+                    continue
+                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                    for i, val in enumerate(row):
+                        if i < len(headers) and val.strip():
+                            result[headers[i]] = val.strip()
+            return result
+
         except Exception as e:
-            print(f"Error saving daily: {e}")
+            print(f"[SHEETS] Error in get_day_data: {e}")
+            return {}
+
+    def save_daily(self, user_id, data):
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            headers = [h.strip() for h in worksheet.row_values(1)]
+
+            # Автосоздание колонок для новых метрик
+            new_keys = [k for k in data if k not in headers]
+            if new_keys:
+                print(f"[SHEETS] adding new columns: {new_keys}")
+                for key in new_keys:
+                    headers.append(key)
+                    worksheet.update_cell(1, len(headers), key)
+
+            print(f"[SHEETS] headers={headers}")
+
+            row_to_append = [
+                "" if data.get(h) is None else str(data.get(h, ""))
+                for h in headers
+            ]
+
+            print(f"[SHEETS] row_to_append={row_to_append}")
+            worksheet.append_row(row_to_append)
+            print(f"[SHEETS] append_row OK")
+
+        except Exception as e:
+            print(f"[SHEETS] ERROR in save_daily: {e}")
+            import traceback
+            traceback.print_exc()
 
     def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual"):
         try:
             try:
                 worksheet = self.sh.worksheet("Notes")
-            except:
+            except Exception:
                 worksheet = self.sh.add_worksheet(title="Notes", rows="100", cols="20")
                 worksheet.append_row(["created_at", "uploaded_at", "user_id", "format", "note", "duration"])
 
             created_str = telegram_ts.strftime("%Y-%m-%d %H:%M:%S") if telegram_ts else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             uploaded_str = uploaded_at.strftime("%Y-%m-%d %H:%M:%S") if uploaded_at else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
+
             worksheet.append_row([
                 created_str,
                 uploaded_str,
@@ -96,4 +127,4 @@ class GoogleSheetsStorage:
                 duration if duration else 0
             ])
         except Exception as e:
-            print(f"Error saving note: {e}")
+            print(f"[SHEETS] Error saving note: {e}")
