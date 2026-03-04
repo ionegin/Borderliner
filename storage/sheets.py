@@ -36,7 +36,7 @@ class GoogleSheetsStorage:
             if not matching_values:
                 return None
 
-            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
+            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
             if metric_key in SUM_METRICS:
                 total = 0.0
                 for v in matching_values:

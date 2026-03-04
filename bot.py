@@ -28,6 +28,10 @@ class Survey(StatesGroup):
 class QuickEdit(StatesGroup):
     waiting_for_value = State()
 
+class EditRecord(StatesGroup):
+    choosing_metric = State()
+    waiting_value = State()
+
 def get_logical_date(dt: datetime):
     # Порог 6 утра
     if dt.hour < 6:
@@ -183,17 +187,128 @@ async def finish_survey(message: types.Message, state: FSMContext):
 async def cmd_start(message: types.Message):
     await handle_start(message)
 
-@dp.message(F.text == "📝 МЕНЮ")
-async def menu_button(message: types.Message):
-    await handle_menu(message)
+# --- Устаревшие кнопки удалены, теперь обрабатываем РЕДАКТИРОВАТЬ ---
+@dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
+async def edit_button(message: types.Message):
+    keyboard = render_menu('edit_period')
+    await message.answer("📅 За какой день ты хочешь отредактировать записи?", reply_markup=keyboard)
 
-@dp.message(F.text == "📅 ИСТОРИЯ")
-async def history_button(message: types.Message, state: FSMContext):
-    await handle_edit_history(message, state)
+@dp.callback_query(F.data.startswith("edit_period:"))
+async def handle_edit_period(callback: CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    
+    if action == "cancel":
+        await state.clear()
+        keyboard = render_menu('main')
+        await callback.message.edit_text("❌ Отменено", reply_markup=keyboard)
+        return
+        
+    if action == "custom":
+        await callback.answer("В разработке: выбор любой даты по календарю", show_alert=True)
+        return
+        
+    # Определяем нужную дату
+    now = datetime.now()
+    if action == "today":
+        edit_date = get_logical_date(now)
+    elif action == "yesterday":
+        edit_date = get_logical_date(now - timedelta(days=1))
+    
+    # Сохраняем логическую дату в состояние и просим выбрать метрику
+    await state.update_data(edit_date=edit_date)
+    await state.set_state(EditRecord.choosing_metric)
+    
+    keyboard = render_menu('edit_metrics')
+    await callback.message.edit_text(f"✏️ Выбрана дата: {edit_date}\nЧто именно нужно изменить?", reply_markup=keyboard)
 
-@dp.message(F.text == "📊 ПРОЙТИ ОПРОС")
-async def daily_button(message: types.Message, state: FSMContext):
-    await start_daily(message, state)
+@dp.callback_query(EditRecord.choosing_metric, F.data.startswith("edit_met:"))
+async def handle_edit_metric_selection(callback: CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    
+    if action == "cancel":
+        await state.clear()
+        keyboard = render_menu('main')
+        await callback.message.edit_text("❌ Отменено", reply_markup=keyboard)
+        return
+        
+    data = await state.get_data()
+    edit_date = data["edit_date"]
+    metric_key = action
+    
+    cfg = get_measurement_config(metric_key)
+    question = METRICS[metric_key]["question"]
+    
+    # Загружаем ТЕКУЩЕЕ значение за этот день
+    existing = storage.check_today_metric(callback.message.chat.id, metric_key, edit_date)
+    val_display = round(float(existing), 1) if isinstance(existing, (int, float)) else existing
+    current_text = f"Текущее значение: {val_display}" if existing is not None else "Записей нет"
+
+    await state.update_data(metric_key=metric_key)
+    await state.set_state(EditRecord.waiting_value)
+    
+    if cfg["format"] == "yes_no":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Да", callback_data=f"eval:yes"),
+            InlineKeyboardButton(text="Нет", callback_data=f"eval:no")
+        ]])
+        await callback.message.edit_text(f"✏️ {question}\n({current_text})\n\nКаким должно быть новое значение?", reply_markup=kb)
+    else:
+        await callback.message.edit_text(f"✏️ {question}\n({current_text})\n\nВведи новое значение (например: 8) или используй +/- чтобы добавить/вычесть (например: -2):")
+
+@dp.callback_query(EditRecord.waiting_value, F.data.startswith("eval:"))
+async def handle_edit_yesno_val(callback: CallbackQuery, state: FSMContext):
+    val = callback.data.split(":")[1]
+    await finish_edit_record(callback.message, state, str(val), from_callback=True)
+    await callback.answer()
+
+@dp.message(EditRecord.waiting_value, F.text)
+async def handle_edit_text_val(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    metric_key = data["metric_key"]
+    edit_date = data["edit_date"]
+    cfg = get_measurement_config(metric_key)
+    
+    text = message.text.strip().replace(',', '.')
+    
+    if cfg["format"] == "number":
+        try:
+            val = float(text)
+            # В отличие от daily_survey, здесь val может быть отрицательным (как корректировка)
+            answers_val = str(val)
+        except ValueError:
+            await message.answer(f"⚠️ Пожалуйста, введи число (можно со знаком '-' или '+').")
+            return
+    else:
+        answers_val = text
+        
+    await finish_edit_record(message, state, answers_val, from_callback=False)
+
+async def finish_edit_record(message: types.Message, state: FSMContext, value: str, from_callback: bool):
+    data = await state.get_data()
+    metric_key = data["metric_key"]
+    edit_date = data["edit_date"]
+    
+    final_row = {
+        "Date": edit_date, # Сохраняем под датой, которую редактируем
+        "created_at": message.date.strftime("%Y-%m-%d %H:%M:%S"),
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_id": str(message.chat.id),
+        metric_key: value
+    }
+    
+    storage.save_daily(message.chat.id, final_row)
+    
+    text = f"✅ Корректировка записана: {METRICS[metric_key]['question']} -> {value} (за {edit_date})"
+    keyboard = render_menu('main')
+    
+    if from_callback:
+        await message.edit_text(text)
+        await bot.send_message(message.chat.id, "Главное меню", reply_markup=keyboard)
+    else:
+        await message.answer(text, reply_markup=keyboard)
+        
+    await state.clear()
+
 
 @dp.message(F.text == "⚡ БЫСТРАЯ ЗАПИСЬ")
 async def quick_edit_button(message: types.Message):
