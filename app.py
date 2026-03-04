@@ -46,6 +46,13 @@ async def main():
             if not scheduler.running:
                 scheduler.start()
             
+            print("🤖 Setting bot commands...")
+            from aiogram.types import BotCommand
+            await bot.set_my_commands([
+                BotCommand(command="start", description="Главное меню"),
+                BotCommand(command="daily", description="Пройти опрос")
+            ])
+            
             print("🤖 Starting bot polling...")
             await dp.start_polling(bot, handle_signals=False)
         except Exception as e:

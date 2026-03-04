@@ -11,9 +11,22 @@ MENUS = {
             {'text': '📊 ПРОЙТИ ОПРОС', 'action': 'start_daily', 'row': 0},
             {'text': '📝 МЕНЮ', 'action': 'open_menu', 'row': 1},
             {'text': '📅 ИСТОРИЯ', 'action': 'edit_history', 'row': 1},
+            {'text': '⚡ БЫСТРАЯ ЗАПИСЬ', 'action': 'quick_edit_menu', 'row': 2},
         ],
         'resize_keyboard': True,
         'one_time': False,  # Всегда видна
+    },
+    
+    'quick_edit': {
+        'type': 'inline',
+        'buttons': [
+            {'text': 'Сон', 'action': 'qedit:sleep_hours'},
+            {'text': 'Еда', 'action': 'qedit:meals'},
+            {'text': 'Медитация', 'action': 'qedit:meditate_minutes'},
+            {'text': 'Йога', 'action': 'qedit:yoga'},
+            {'text': 'Курил', 'action': 'qedit:smoked'},
+            {'text': '❌ Отмена', 'action': 'qedit:cancel'}
+        ]
     },
     
     'edit_date': {

@@ -25,6 +25,9 @@ CHANGE_METRICS = ['smoked', 'yoga']
 class Survey(StatesGroup):
     waiting_for_metrics = State()
 
+class QuickEdit(StatesGroup):
+    waiting_for_value = State()
+
 def get_logical_date(dt: datetime):
     # Порог 6 утра
     if dt.hour < 6:
@@ -106,7 +109,23 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     idx, answers = data["current_idx"], data["answers"]
     key = data["metrics_to_ask"][idx]
     
-    answers[key] = message.text.strip()
+    cfg = get_measurement_config(key)
+    
+    if cfg["format"] == "number":
+        try:
+            val = float(message.text.strip().replace(',', '.'))
+            if "min" in cfg and val < cfg["min"]:
+                raise ValueError()
+            if "max" in cfg and val > cfg["max"]:
+                raise ValueError()
+            answers[key] = str(val)
+        except ValueError:
+            await message.answer(f"⚠️ Пожалуйста, введи число от {cfg.get('min', 0)} до {cfg.get('max', '∞')}.")
+            # Не увеличиваем idx, чтобы переспросить
+            return
+    else:
+        answers[key] = message.text.strip()
+        
     idx += 1
     await state.update_data(answers=answers, current_idx=idx)
     if not await ask_next_metric(message.chat.id, state, idx):
@@ -176,6 +195,93 @@ async def history_button(message: types.Message, state: FSMContext):
 async def daily_button(message: types.Message, state: FSMContext):
     await start_daily(message, state)
 
+@dp.message(F.text == "⚡ БЫСТРАЯ ЗАПИСЬ")
+async def quick_edit_button(message: types.Message):
+    keyboard = render_menu('quick_edit')
+    await message.answer("⚡ Выбери, что хочешь быстро записать:", reply_markup=keyboard)
+
+@dp.callback_query(F.data.startswith("qedit:"))
+async def handle_quick_edit_selection(callback: CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    
+    if action == "cancel":
+        await state.clear()
+        keyboard = render_menu('main')
+        await callback.message.edit_text("❌ Отменено", reply_markup=keyboard)
+        return
+
+    # Запускаем FSM для ввода одного значения
+    metric_key = action
+    cfg = get_measurement_config(metric_key)
+    question = METRICS[metric_key]["question"]
+    
+    await state.update_data(metric_key=metric_key)
+    await state.set_state(QuickEdit.waiting_for_value)
+    
+    # Если формат yes_no - показываем кнопки вместо ожидания текста
+    if cfg["format"] == "yes_no":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Да", callback_data=f"qval:yes"),
+            InlineKeyboardButton(text="Нет", callback_data=f"qval:no")
+        ]])
+        await callback.message.edit_text(f"⚡ {question}", reply_markup=kb)
+    else:
+        await callback.message.edit_text(f"⚡ {question}\n(Введи числоковое значение или текст)")
+
+@dp.callback_query(QuickEdit.waiting_for_value, F.data.startswith("qval:"))
+async def handle_quick_edit_yesno_val(callback: CallbackQuery, state: FSMContext):
+    val = callback.data.split(":")[1]
+    await finish_quick_edit(callback.message, state, val, from_callback=True)
+    await callback.answer()
+
+@dp.message(QuickEdit.waiting_for_value, F.text)
+async def handle_quick_edit_text_val(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    metric_key = data["metric_key"]
+    cfg = get_measurement_config(metric_key)
+    
+    if cfg["format"] == "number":
+        try:
+            val = float(message.text.strip().replace(',', '.'))
+            if "min" in cfg and val < cfg["min"]:
+                raise ValueError()
+            if "max" in cfg and val > cfg["max"]:
+                raise ValueError()
+            val = str(val)
+        except ValueError:
+            await message.answer(f"⚠️ Пожалуйста, введи число от {cfg.get('min', 0)} до {cfg.get('max', '∞')}.")
+            return
+    else:
+        val = message.text.strip()
+        
+    await finish_quick_edit(message, state, val, from_callback=False)
+
+async def finish_quick_edit(message: types.Message, state: FSMContext, value: str, from_callback: bool):
+    data = await state.get_data()
+    metric_key = data.get("metric_key")
+    logical_day = get_logical_date(message.date)
+    
+    final_row = {
+        "Date": logical_day,
+        "created_at": message.date.strftime("%Y-%m-%d %H:%M:%S"),
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "user_id": str(message.chat.id),
+        metric_key: value
+    }
+    
+    storage.save_daily(message.chat.id, final_row)
+    
+    text = f"✅ Сохранено: {METRICS[metric_key]['question']} -> {value} (за {logical_day})"
+    keyboard = render_menu('main')
+    
+    if from_callback:
+        await message.edit_text(text)
+        await bot.send_message(message.chat.id, "Главное меню", reply_markup=keyboard)
+    else:
+        await message.answer(text, reply_markup=keyboard)
+        
+    await state.clear()
+
 @dp.callback_query(F.data.startswith("edit_date:"))
 async def edit_date_callback(callback: CallbackQuery, state: FSMContext):
     await handle_edit_date_callback(callback, state)
@@ -208,6 +314,21 @@ async def handle_voice(message: types.Message):
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+@dp.message(F.text)
+async def handle_text_note(message: types.Message, state: FSMContext):
+    # Если мы находимся вне состояния (не внутри опроса / ежедневной рутины), записываем обычный текст
+    current_state = await state.get_state()
+    if current_state is None:
+        text = message.text
+        storage.save_note(
+            user_id=message.chat.id,
+            text=text,
+            is_voice=False,
+            telegram_ts=message.date,
+            uploaded_at=datetime.now()
+        )
+        await message.answer(f"📝 Записал заметку:\n_{text}_", parse_mode="Markdown")
 
 if __name__ == "__main__":
     dp.run_polling(bot)
