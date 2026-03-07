@@ -31,7 +31,7 @@ GROQ_API_KEY = os.getenv("GROQ_KEY")
 # Render задаёт RENDER_EXTERNAL_URL автоматически (https://xxx.onrender.com)
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 
-GOOGLE_SHEET_ID = "1jLufJWwCXdLARn1i9NCop0NeTYlWH5GUOf4sZLRFyMI"
+GOOGLE_SHEET_ID = "1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY"
 
 # Настройки напоминаний (время в UTC+2 Cairo)
 from datetime import time

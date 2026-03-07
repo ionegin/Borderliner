@@ -187,7 +187,12 @@ async def finish_survey(message: types.Message, state: FSMContext):
 async def cmd_start(message: types.Message):
     await handle_start(message)
 
-# --- Устаревшие кнопки удалены, теперь обрабатываем РЕДАКТИРОВАТЬ ---
+# --- Кнопка "ПРОЙТИ ОПРОС" → запускает опрос (аналог /daily) ---
+@dp.message(F.text == "📊 ПРОЙТИ ОПРОС")
+async def daily_button(message: types.Message, state: FSMContext):
+    await start_daily(message, state)
+
+# --- Кнопка "РЕДАКТИРОВАТЬ" ---
 @dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
 async def edit_button(message: types.Message):
     keyboard = render_menu('edit_period')
