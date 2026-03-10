@@ -2,10 +2,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-print(f"DEBUG CREDENTIALS_CONTENT exists: {bool(os.getenv('CREDENTIALS_CONTENT'))}")
-print(f"DEBUG CREDENTIALS_PATH: {os.getenv('CREDENTIALS_PATH')}")
-print(f"DEBUG CREDENTIALS_FILE will be: {os.getenv('CREDENTIALS_PATH') or 'borderliner-credentials.json'}")
-
 # Определяем папку, где лежит этот файл
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
@@ -24,20 +20,19 @@ if credentials_content:
 
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
 
+print(f"DEBUG CREDENTIALS_FILE: {CREDENTIALS_FILE}")
+print(f"DEBUG GOOGLE_SHEET_ID: 1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY")
+
 # Получаем переменные окружения
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
 
-# Render задаёт RENDER_EXTERNAL_URL автоматически (https://xxx.onrender.com)
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 
-GOOGLE_SHEET_ID = "1jLufJWwCXdLARn1i9NCop0NeTYlWH5GUOf4sZLRFyMI"
+GOOGLE_SHEET_ID = "1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY"
 
-# Настройки напоминаний (время в UTC+2 Cairo)
 from datetime import time
 REMINDERS = [
-    {'time': time(8, 0), 'type': 'morning'},   # Утреннее напоминание
-    {'time': time(20, 45), 'type': 'evening'}, # Вечернее напоминание
-    # Добавляй новые здесь:
-    # {'time': time(14, 0), 'type': 'afternoon'},
+    {'time': time(8, 0), 'type': 'morning'},
+    {'time': time(20, 45), 'type': 'evening'},
 ]
