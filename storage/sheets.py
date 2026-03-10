@@ -36,7 +36,7 @@ class GoogleSheetsStorage:
             if not matching_values:
                 return None
 
-            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes']
+            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
             if metric_key in SUM_METRICS:
                 total = 0.0
                 for v in matching_values:
@@ -53,7 +53,6 @@ class GoogleSheetsStorage:
             return None
 
     def get_day_data(self, user_id, logical_date):
-        """Возвращает все метрики за день одним запросом"""
         try:
             worksheet = self.sh.get_worksheet(0)
             all_values = worksheet.get_all_values()
@@ -79,12 +78,10 @@ class GoogleSheetsStorage:
             return {}
 
     def save_daily(self, user_id, data):
-        print(f"[SHEETS] using credentials: {self.gc.auth.service_account_email}")
         try:
             worksheet = self.sh.get_worksheet(0)
             headers = [h.strip() for h in worksheet.row_values(1)]
 
-            # Автосоздание колонок для новых метрик
             new_keys = [k for k in data if k not in headers]
             if new_keys:
                 print(f"[SHEETS] adding new columns: {new_keys}")

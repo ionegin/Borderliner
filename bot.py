@@ -10,7 +10,7 @@ from config import BOT_TOKEN, WEBHOOK_BASE_URL
 from metrics import METRICS, get_measurement_config
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
-from handlers import handle_start, handle_menu, handle_edit_history, handle_edit_date_callback
+from handlers import handle_start, handle_edit_date_callback
 from services.transcription import transcribe_voice
 import os
 
@@ -48,7 +48,6 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     cfg = get_measurement_config(key)
     base_question = metric["question"]
 
-    l_date = data.get("logical_date")
     existing = data.get("existing", {})
     existing_val = existing.get(key)
 
@@ -58,7 +57,10 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     if existing_val is not None:
         if key in SUM_METRICS:
             unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
-            val_display = round(float(existing_val), 1) if isinstance(existing_val, (int, float)) else existing_val
+            try:
+                val_display = round(float(existing_val), 1)
+            except (ValueError, TypeError):
+                val_display = existing_val
             question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
             buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
         elif key in CHANGE_METRICS:
@@ -89,8 +91,6 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
             await bot.send_message(chat_id, f"📊 {question}")
     return True
 
-# ─── ОПРОС ───────────────────────────────────────────────────────────────────
-
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await handle_start(message)
@@ -106,7 +106,7 @@ async def daily_button(message: types.Message, state: FSMContext):
 async def _launch_survey(message: types.Message, state: FSMContext):
     l_date = get_logical_date(message.date)
     existing = storage.get_day_data(message.chat.id, l_date)
-    print(f"[SURVEY] launching for {message.chat.id}, date={l_date}, existing={existing}")
+    print(f"[SURVEY] launching for {message.chat.id}, date={l_date}")
     await state.update_data(
         metrics_to_ask=list(METRICS.keys()),
         answers={},
@@ -175,16 +175,12 @@ async def finish_survey(message: types.Message, state: FSMContext):
     print(f"[SURVEY] final_row={final_row}")
     storage.save_daily(message.chat.id, final_row)
 
-    keyboard = render_menu('main')
-    await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=keyboard)
+    await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=render_menu('main'))
     await state.clear()
-
-# ─── РЕДАКТИРОВАНИЕ ──────────────────────────────────────────────────────────
 
 @dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
 async def edit_button(message: types.Message):
-    keyboard = render_menu('edit_period')
-    await message.answer("📅 За какой день редактируем?", reply_markup=keyboard)
+    await message.answer("📅 За какой день редактируем?", reply_markup=render_menu('edit_period'))
 
 @dp.callback_query(F.data.startswith("edit_period:"))
 async def handle_edit_period(callback: CallbackQuery, state: FSMContext):
@@ -227,7 +223,7 @@ async def handle_edit_metric_selection(callback: CallbackQuery, state: FSMContex
     question = METRICS[metric_key]["question"]
 
     existing = storage.check_today_metric(callback.message.chat.id, metric_key, edit_date)
-    current_text = f"Текущее: {round(float(existing), 1) if isinstance(existing, (int, float)) else existing}" if existing is not None else "Записей нет"
+    current_text = f"Текущее: {existing}" if existing is not None else "Записей нет"
 
     await state.update_data(metric_key=metric_key)
     await state.set_state(EditRecord.waiting_value)
@@ -250,15 +246,14 @@ async def handle_edit_yesno_val(callback: CallbackQuery, state: FSMContext):
 @dp.message(EditRecord.waiting_value, F.text)
 async def handle_edit_text_val(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    metric_key = data["metric_key"]
-    cfg = get_measurement_config(metric_key)
+    cfg = get_measurement_config(data["metric_key"])
     text = message.text.strip().replace(',', '.')
 
     if cfg["format"] == "number":
         try:
             float(text)
         except ValueError:
-            await message.answer("⚠️ Введи число (можно со знаком + или -).")
+            await message.answer("⚠️ Введи число.")
             return
 
     await finish_edit_record(message, state, text, from_callback=False)
@@ -284,8 +279,6 @@ async def finish_edit_record(message: types.Message, state: FSMContext, value: s
     else:
         await message.answer(text, reply_markup=render_menu('main'))
     await state.clear()
-
-# ─── БЫСТРАЯ ЗАПИСЬ ──────────────────────────────────────────────────────────
 
 @dp.message(F.text == "⚡ БЫСТРАЯ ЗАПИСЬ")
 async def quick_edit_button(message: types.Message):
@@ -326,8 +319,7 @@ async def handle_quick_edit_yesno_val(callback: CallbackQuery, state: FSMContext
 @dp.message(QuickEdit.waiting_for_value, F.text)
 async def handle_quick_edit_text_val(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    metric_key = data["metric_key"]
-    cfg = get_measurement_config(metric_key)
+    cfg = get_measurement_config(data["metric_key"])
 
     if cfg["format"] == "number":
         try:
@@ -367,8 +359,6 @@ async def finish_quick_edit(message: types.Message, state: FSMContext, value: st
         await message.answer(text, reply_markup=render_menu('main'))
     await state.clear()
 
-# ─── ГОЛОСОВЫЕ И ТЕКСТОВЫЕ ЗАМЕТКИ ──────────────────────────────────────────
-
 @dp.message(F.voice)
 async def handle_voice(message: types.Message):
     print(f"[VOICE] received from {message.chat.id}")
@@ -376,11 +366,8 @@ async def handle_voice(message: types.Message):
     try:
         file = await bot.get_file(message.voice.file_id)
         await bot.download_file(file.file_path, path)
-        print(f"[VOICE] downloaded to {path}")
-
         text = await transcribe_voice(path)
         print(f"[VOICE] transcribed: {text}")
-
         storage.save_note(
             user_id=message.chat.id,
             text=text,
@@ -390,7 +377,6 @@ async def handle_voice(message: types.Message):
             uploaded_at=datetime.now(),
         )
         await message.answer(f"🎙️ Записал заметку:\n_{text}_", parse_mode="Markdown")
-
     except Exception as e:
         print(f"[VOICE] ERROR: {e}")
         await message.answer("❌ Не удалось расшифровать голосовое")
@@ -403,7 +389,6 @@ async def handle_text_note(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
         text = message.text
-        print(f"[NOTE] saving text note from {message.chat.id}: {text[:50]}")
         storage.save_note(
             user_id=message.chat.id,
             text=text,
