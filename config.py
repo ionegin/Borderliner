@@ -1,4 +1,4 @@
-print("VERSION 5 Stable Voice + Text +Daily")
+print("VERSION 6 sheets fix")
 
 import os
 from pathlib import Path
