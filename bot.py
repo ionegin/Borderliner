@@ -82,22 +82,33 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
         await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
     else:
-        # number — пропуск доступен, при повторном опросе SUM_METRICS показывают накопленное
-        buttons = []
-        question = base_question
+        # number
+        # scale_10 (energy, anxiety, communication) — обязательные, без кнопок
+        is_scale = cfg.get("format") == "number" and cfg.get("max") == 10 and cfg.get("min") == 0
 
-        if existing_val is not None and key in SUM_METRICS:
+        if key in SUM_METRICS:
             unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
-            try:
-                val_display = round(float(existing_val), 1)
-            except (ValueError, TypeError):
-                val_display = existing_val
-            question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
-            buttons.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
-
-        buttons.append(InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip"))
-        kb = InlineKeyboardMarkup(inline_keyboard=[buttons])
-        await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
+            if existing_val is not None:
+                try:
+                    val_display = round(float(existing_val), 1)
+                except (ValueError, TypeError):
+                    val_display = existing_val
+            else:
+                val_display = 0
+            question = f"{base_question}\n(Сейчас: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"✅ Оставить ({val_display})", callback_data=f"m:{key}:keep")
+            ]])
+            await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
+        elif is_scale:
+            # обязательные — без кнопок, просто вопрос
+            await bot.send_message(chat_id, f"📊 {base_question} (0–10)")
+        else:
+            # прочие number — с пропуском
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
+            ]])
+            await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
     return True
 
