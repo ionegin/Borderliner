@@ -4,9 +4,17 @@ MENUS = {
         'type': 'reply',
         'buttons': [
             {'text': '📊 ПРОЙТИ ОПРОС', 'action': 'start_daily', 'row': 0},
-            {'text': '📝 МЕНЮ', 'action': 'open_menu', 'row': 1},
+            {'text': '✏️ РЕДАКТИРОВАТЬ', 'action': 'yesno_edit', 'row': 1},
         ],
         'resize_keyboard': True,
         'one_time': False,
+    },
+    'yesno_edit': {
+        'type': 'inline',
+        'buttons': [
+            {'text': '🚬 Курение', 'action': 'ynedit:smoked'},
+            {'text': '🧘 Йога', 'action': 'ynedit:yoga'},
+            {'text': '❌ Отмена', 'action': 'ynedit:cancel'},
+        ],
     },
 }

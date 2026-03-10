@@ -67,8 +67,7 @@ class GoogleSheetsStorage:
 
             SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
 
-            # Собираем все строки за день
-            raw = {}  # key -> list of values
+            raw = {}
             for row in all_values[1:]:
                 if len(row) <= max(date_idx, user_idx):
                     continue
@@ -80,7 +79,6 @@ class GoogleSheetsStorage:
                                 raw[key] = []
                             raw[key].append(val.strip())
 
-            # Суммируем числовые, берём последнее для остальных
             result = {}
             for key, values in raw.items():
                 if key in SUM_METRICS:
@@ -100,6 +98,40 @@ class GoogleSheetsStorage:
         except Exception as e:
             print(f"[SHEETS] Error in get_day_data: {e}")
             return {}
+
+    def update_first_row_yesno(self, user_id, logical_date, metric_key, value):
+        """Обновляет yes-no значение в первой строке пользователя за день."""
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                return False
+
+            headers = [h.strip() for h in all_values[0]]
+            try:
+                date_idx = headers.index("Date")
+                user_idx = headers.index("user_id")
+                metric_idx = headers.index(metric_key)
+            except ValueError:
+                print(f"[SHEETS] update_first_row_yesno: column '{metric_key}' not found")
+                return False
+
+            for row_num, row in enumerate(all_values[1:], start=2):
+                if len(row) <= max(date_idx, user_idx):
+                    continue
+                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                    worksheet.update_cell(row_num, metric_idx + 1, value)
+                    print(f"[SHEETS] updated {metric_key}={value} at row {row_num}")
+                    return True
+
+            print(f"[SHEETS] update_first_row_yesno: no row found for user={user_id} date={logical_date}")
+            return False
+
+        except Exception as e:
+            print(f"[SHEETS] Error in update_first_row_yesno: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def save_daily(self, user_id, data):
         try:
