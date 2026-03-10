@@ -167,15 +167,16 @@ class GoogleSheetsStorage:
                 worksheet = self.sh.worksheet("Notes")
             except Exception:
                 worksheet = self.sh.add_worksheet(title="Notes", rows="100", cols="20")
-                worksheet.append_row(["created_at", "uploaded_at", "user_id", "format", "note", "duration"])
+                worksheet.append_row(["created_at", "format", "note", "duration"])
 
-            created_str = telegram_ts.strftime("%Y-%m-%d %H:%M:%S") if telegram_ts else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            uploaded_str = uploaded_at.strftime("%Y-%m-%d %H:%M:%S") if uploaded_at else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            from datetime import timedelta
+            if telegram_ts:
+                created_str = (telegram_ts + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+            else:
+                created_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
             worksheet.append_row([
                 created_str,
-                uploaded_str,
-                str(user_id),
                 "Voice" if is_voice else "Text",
                 text,
                 duration if duration else 0

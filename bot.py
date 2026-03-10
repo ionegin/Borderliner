@@ -29,9 +29,10 @@ class YesNoEdit(StatesGroup):
     waiting_for_value = State()
 
 def get_logical_date(dt: datetime):
-    if dt.hour < 6:
-        return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
-    return dt.strftime("%Y-%m-%d")
+    local = dt + timedelta(hours=2)  # UTC+2
+    if local.hour < 6:
+        return (local - timedelta(days=1)).strftime("%Y-%m-%d")
+    return local.strftime("%Y-%m-%d")
 
 def val_to_ru(val):
     if val == "yes": return "Да"
@@ -194,11 +195,10 @@ async def finish_survey(message: types.Message, state: FSMContext):
     print(f"[SURVEY] logical_day={logical_day}")
     print(f"[SURVEY] raw answers={data['answers']}")
 
+    local_now = message.date + timedelta(hours=2)  # UTC+2
     final_row = {
         "Date": logical_day,
-        "created_at": message.date.strftime("%Y-%m-%d %H:%M:%S"),
-        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "user_id": str(message.chat.id),
+        "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
     }
     final_row.update(data["answers"])
 
