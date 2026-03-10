@@ -1,3 +1,5 @@
+print("CONFIG VERSION 2")
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
