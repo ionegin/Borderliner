@@ -17,16 +17,15 @@ class GoogleSheetsStorage:
             headers = [h.strip() for h in all_values[0]]
             try:
                 date_idx = headers.index("Date")
-                user_idx = headers.index("user_id")
                 metric_idx = headers.index(metric_key)
             except ValueError:
                 return None
 
             matching_values = []
             for row in all_values[1:]:
-                if len(row) <= max(date_idx, user_idx, metric_idx):
+                if len(row) <= max(date_idx, metric_idx):
                     continue
-                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                if row[date_idx].strip() == logical_date:
                     val = row[metric_idx].strip()
                     if val:
                         matching_values.append(val)
@@ -61,7 +60,6 @@ class GoogleSheetsStorage:
             headers = [h.strip() for h in all_values[0]]
             try:
                 date_idx = headers.index("Date")
-                user_idx = headers.index("user_id")
             except ValueError:
                 return {}
 
@@ -69,9 +67,9 @@ class GoogleSheetsStorage:
 
             raw = {}
             for row in all_values[1:]:
-                if len(row) <= max(date_idx, user_idx):
+                if len(row) <= date_idx:
                     continue
-                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                if row[date_idx].strip() == logical_date:
                     for i, val in enumerate(row):
                         if i < len(headers) and val.strip():
                             key = headers[i]
@@ -100,7 +98,7 @@ class GoogleSheetsStorage:
             return {}
 
     def update_first_row_yesno(self, user_id, logical_date, metric_key, value):
-        """Обновляет yes-no значение в первой строке пользователя за день."""
+        """Обновляет yes-no значение в первой строке за день."""
         try:
             worksheet = self.sh.get_worksheet(0)
             all_values = worksheet.get_all_values()
@@ -110,21 +108,20 @@ class GoogleSheetsStorage:
             headers = [h.strip() for h in all_values[0]]
             try:
                 date_idx = headers.index("Date")
-                user_idx = headers.index("user_id")
                 metric_idx = headers.index(metric_key)
             except ValueError:
                 print(f"[SHEETS] update_first_row_yesno: column '{metric_key}' not found")
                 return False
 
             for row_num, row in enumerate(all_values[1:], start=2):
-                if len(row) <= max(date_idx, user_idx):
+                if len(row) <= date_idx:
                     continue
-                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                if row[date_idx].strip() == logical_date:
                     worksheet.update_cell(row_num, metric_idx + 1, value)
                     print(f"[SHEETS] updated {metric_key}={value} at row {row_num}")
                     return True
 
-            print(f"[SHEETS] update_first_row_yesno: no row found for user={user_id} date={logical_date}")
+            print(f"[SHEETS] update_first_row_yesno: no row found for date={logical_date}")
             return False
 
         except Exception as e:
