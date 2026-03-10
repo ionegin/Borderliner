@@ -121,6 +121,7 @@ class GoogleSheetsStorage:
             ]
 
             print(f"[SHEETS] row_to_append={row_to_append}")
+            print(f"[SHEETS] appending note: is_voice={is_voice}, text={text[:30]}, worksheet={worksheet.title}")
             worksheet.append_row(row_to_append)
             print(f"[SHEETS] append_row OK")
 

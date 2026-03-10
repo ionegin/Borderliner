@@ -1,4 +1,4 @@
-print("CONFIG VERSION STABLE")
+print("VERSION 4")
 
 import os
 from pathlib import Path
