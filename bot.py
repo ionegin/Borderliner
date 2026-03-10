@@ -62,7 +62,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
             question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
             buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
         elif key in CHANGE_METRICS:
-            question = f"Изменить значение «{existing_val}»?"
+            val_ru = "Да" if existing_val == "yes" else "Нет"
+            question = f"Изменить значение «{val_ru}»?"
             buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
 
     if cfg["format"] == "yes_no":
