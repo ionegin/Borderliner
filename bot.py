@@ -10,7 +10,7 @@ from config import BOT_TOKEN, WEBHOOK_BASE_URL
 from metrics import METRICS, get_measurement_config
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
-from handlers import handle_start, handle_edit_date_callback
+from handlers import handle_start
 from services.transcription import transcribe_voice
 import os
 
@@ -28,22 +28,23 @@ class Survey(StatesGroup):
 class QuickEdit(StatesGroup):
     waiting_for_value = State()
 
-class EditRecord(StatesGroup):
-    choosing_metric = State()
-    waiting_value = State()
-
 def get_logical_date(dt: datetime):
     if dt.hour < 6:
         return (dt - timedelta(days=1)).strftime("%Y-%m-%d")
     return dt.strftime("%Y-%m-%d")
 
 def val_to_ru(key, val):
-    """yes/no → Да/Нет для отображения"""
     if val == "yes":
         return "Да"
     if val == "no":
         return "Нет"
     return val
+
+def opposite_val(val):
+    return "no" if val == "yes" else "yes"
+
+def opposite_ru(val):
+    return "Нет" if val == "yes" else "Да"
 
 async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     data = await state.get_data()
@@ -59,51 +60,51 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     existing = data.get("existing", {})
     existing_val = existing.get(key)
 
-    question = base_question
-    buttons_row = []
+    if cfg["format"] == "yes_no":
+        if existing_val is not None:
+            val_ru = val_to_ru(key, existing_val)
+            opp_ru = opposite_ru(existing_val)
+            opp_val = opposite_val(existing_val)
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"✅ Оставить ({val_ru})", callback_data=f"m:{key}:keep"),
+                InlineKeyboardButton(text=f"🔄 → {opp_ru}", callback_data=f"m:{key}:{opp_val}"),
+            ]])
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="Да", callback_data=f"m:{key}:yes"),
+                InlineKeyboardButton(text="Нет", callback_data=f"m:{key}:no"),
+            ]])
+        await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
-    if existing_val is not None:
-        if key in SUM_METRICS:
+    elif cfg["format"] == "text":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
+        ]])
+        await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
+
+    else:
+        # number
+        if existing_val is not None and key in SUM_METRICS:
             unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
             try:
                 val_display = round(float(existing_val), 1)
             except (ValueError, TypeError):
                 val_display = existing_val
             question = f"{base_question}\n(Уже записано: {val_display} {unit}. Сколько ПРИБАВИТЬ?)"
-            buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
-        elif key in CHANGE_METRICS:
-            val_ru = val_to_ru(key, existing_val)
-            question = f"{base_question}\n(Записано: {val_ru}. Изменить?)"
-            buttons_row.append(InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep"))
-
-    if cfg["format"] == "yes_no":
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="Да", callback_data=f"m:{key}:yes"),
-                InlineKeyboardButton(text="Нет", callback_data=f"m:{key}:no"),
-            ],
-            buttons_row if buttons_row else []
-        ])
-        await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
-    elif cfg["format"] == "text":
-        kb_rows = [[InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")]]
-        if buttons_row:
-            kb_rows.append(buttons_row)
-        kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-        await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
-    else:
-        if buttons_row:
-            kb = InlineKeyboardMarkup(inline_keyboard=[buttons_row])
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Оставить", callback_data=f"m:{key}:keep")
+            ]])
             await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
         else:
-            await bot.send_message(chat_id, f"📊 {question}")
+            await bot.send_message(chat_id, f"📊 {base_question}")
+
     return True
 
 # ─── СТАРТ ───────────────────────────────────────────────────────────────────
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
-    await state.clear()  # сбрасываем любой активный FSM
+    await state.clear()
     await handle_start(message)
 
 # ─── ОПРОС ───────────────────────────────────────────────────────────────────
@@ -189,110 +190,6 @@ async def finish_survey(message: types.Message, state: FSMContext):
     storage.save_daily(message.chat.id, final_row)
 
     await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=render_menu('main'))
-    await state.clear()
-
-# ─── РЕДАКТИРОВАНИЕ ──────────────────────────────────────────────────────────
-
-@dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
-async def edit_button(message: types.Message):
-    await message.answer("📅 За какой день редактируем?", reply_markup=render_menu('edit_period'))
-
-@dp.callback_query(F.data.startswith("edit_period:"))
-async def handle_edit_period(callback: CallbackQuery, state: FSMContext):
-    action = callback.data.split(":")[1]
-
-    if action == "cancel":
-        await state.clear()
-        await callback.message.edit_text("❌ Отменено")
-        await bot.send_message(callback.message.chat.id, "Главное меню", reply_markup=render_menu('main'))
-        return
-
-    if action == "custom":
-        await callback.answer("В разработке", show_alert=True)
-        return
-
-    now = datetime.now()
-    edit_date = get_logical_date(now) if action == "today" else get_logical_date(now - timedelta(days=1))
-
-    await state.update_data(edit_date=edit_date)
-    await state.set_state(EditRecord.choosing_metric)
-    await callback.message.edit_text(
-        f"✏️ Дата: {edit_date}\nЧто изменить?",
-        reply_markup=render_menu('edit_metrics')
-    )
-
-@dp.callback_query(EditRecord.choosing_metric, F.data.startswith("edit_met:"))
-async def handle_edit_metric_selection(callback: CallbackQuery, state: FSMContext):
-    action = callback.data.split(":")[1]
-
-    if action == "cancel":
-        await state.clear()
-        await callback.message.edit_text("❌ Отменено")
-        await bot.send_message(callback.message.chat.id, "Главное меню", reply_markup=render_menu('main'))
-        return
-
-    data = await state.get_data()
-    edit_date = data["edit_date"]
-    metric_key = action
-    cfg = get_measurement_config(metric_key)
-    question = METRICS[metric_key]["question"]
-
-    existing = storage.check_today_metric(callback.message.chat.id, metric_key, edit_date)
-    current_text = f"Текущее: {val_to_ru(metric_key, str(existing))}" if existing is not None else "Записей нет"
-
-    await state.update_data(metric_key=metric_key)
-    await state.set_state(EditRecord.waiting_value)
-
-    if cfg["format"] == "yes_no":
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Да", callback_data="eval:yes"),
-            InlineKeyboardButton(text="Нет", callback_data="eval:no"),
-        ]])
-        await callback.message.edit_text(f"✏️ {question}\n({current_text})", reply_markup=kb)
-    else:
-        await callback.message.edit_text(f"✏️ {question}\n({current_text})\n\nВведи новое значение:")
-
-@dp.callback_query(EditRecord.waiting_value, F.data.startswith("eval:"))
-async def handle_edit_yesno_val(callback: CallbackQuery, state: FSMContext):
-    val = callback.data.split(":")[1]
-    await finish_edit_record(callback.message, state, val, from_callback=True)
-    await callback.answer()
-
-@dp.message(EditRecord.waiting_value, F.text)
-async def handle_edit_text_val(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    cfg = get_measurement_config(data["metric_key"])
-    text = message.text.strip().replace(',', '.')
-
-    if cfg["format"] == "number":
-        try:
-            float(text)
-        except ValueError:
-            await message.answer("⚠️ Введи число.")
-            return
-
-    await finish_edit_record(message, state, text, from_callback=False)
-
-async def finish_edit_record(message: types.Message, state: FSMContext, value: str, from_callback: bool):
-    data = await state.get_data()
-    metric_key = data["metric_key"]
-    edit_date = data["edit_date"]
-
-    final_row = {
-        "Date": edit_date,
-        "created_at": message.date.strftime("%Y-%m-%d %H:%M:%S"),
-        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "user_id": str(message.chat.id),
-        metric_key: value,
-    }
-    storage.save_daily(message.chat.id, final_row)
-
-    text = f"✅ {METRICS[metric_key]['question']} → {val_to_ru(metric_key, value)} (за {edit_date})"
-    if from_callback:
-        await message.edit_text(text)
-        await bot.send_message(message.chat.id, "Главное меню", reply_markup=render_menu('main'))
-    else:
-        await message.answer(text, reply_markup=render_menu('main'))
     await state.clear()
 
 # ─── БЫСТРАЯ ЗАПИСЬ ──────────────────────────────────────────────────────────
@@ -418,7 +315,7 @@ async def handle_text_note(message: types.Message, state: FSMContext):
             telegram_ts=message.date,
             uploaded_at=datetime.now(),
         )
-        await message.answer(f"📝 Записал заметку:\n_{text}_", parse_mode="Markdown")
+        await message.answer("📝 Заметка сохранена.")
 
 if __name__ == "__main__":
     dp.run_polling(bot)
