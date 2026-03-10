@@ -26,12 +26,10 @@ class GoogleSheetsStorage:
             for row in all_values[1:]:
                 if len(row) <= max(date_idx, user_idx, metric_idx):
                     continue
-                row_date = row[date_idx].strip()
-                row_user = str(row[user_idx]).strip()
-                row_val = row[metric_idx].strip()
-                if row_date == logical_date and row_user == str(user_id):
-                    if row_val:
-                        matching_values.append(row_val)
+                if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
+                    val = row[metric_idx].strip()
+                    if val:
+                        matching_values.append(val)
 
             if not matching_values:
                 return None
@@ -53,6 +51,7 @@ class GoogleSheetsStorage:
             return None
 
     def get_day_data(self, user_id, logical_date):
+        """Возвращает все метрики за день одним запросом, суммируя числовые."""
         try:
             worksheet = self.sh.get_worksheet(0)
             all_values = worksheet.get_all_values()
@@ -60,17 +59,42 @@ class GoogleSheetsStorage:
                 return {}
 
             headers = [h.strip() for h in all_values[0]]
-            date_idx = headers.index("Date")
-            user_idx = headers.index("user_id")
+            try:
+                date_idx = headers.index("Date")
+                user_idx = headers.index("user_id")
+            except ValueError:
+                return {}
 
-            result = {}
+            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
+
+            # Собираем все строки за день
+            raw = {}  # key -> list of values
             for row in all_values[1:]:
                 if len(row) <= max(date_idx, user_idx):
                     continue
                 if row[date_idx].strip() == logical_date and str(row[user_idx]).strip() == str(user_id):
                     for i, val in enumerate(row):
                         if i < len(headers) and val.strip():
-                            result[headers[i]] = val.strip()
+                            key = headers[i]
+                            if key not in raw:
+                                raw[key] = []
+                            raw[key].append(val.strip())
+
+            # Суммируем числовые, берём последнее для остальных
+            result = {}
+            for key, values in raw.items():
+                if key in SUM_METRICS:
+                    total = 0.0
+                    for v in values:
+                        try:
+                            total += float(v.replace(',', '.'))
+                        except ValueError:
+                            continue
+                    if total > 0:
+                        result[key] = str(total)
+                else:
+                    result[key] = values[-1]
+
             return result
 
         except Exception as e:
@@ -124,5 +148,9 @@ class GoogleSheetsStorage:
                 text,
                 duration if duration else 0
             ])
+            print(f"[SHEETS] note saved OK")
+
         except Exception as e:
             print(f"[SHEETS] Error saving note: {e}")
+            import traceback
+            traceback.print_exc()
