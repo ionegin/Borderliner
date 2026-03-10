@@ -79,6 +79,7 @@ class GoogleSheetsStorage:
             return {}
 
     def save_daily(self, user_id, data):
+        print(f"[SHEETS] using credentials: {self.gc.auth.service_account_email}")
         try:
             worksheet = self.sh.get_worksheet(0)
             headers = [h.strip() for h in worksheet.row_values(1)]

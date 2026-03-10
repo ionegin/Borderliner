@@ -17,18 +17,18 @@ if credentials_content:
     with open(credentials_path, "w") as f:
         f.write(credentials_content)
     os.environ["CREDENTIALS_PATH"] = credentials_path
+    print(f"DEBUG: created secret_credentials.json from CREDENTIALS_CONTENT")
+else:
+    print(f"DEBUG: CREDENTIALS_CONTENT is empty or missing!")
 
 CREDENTIALS_FILE = os.getenv("CREDENTIALS_PATH") or "borderliner-credentials.json"
 
-print(f"DEBUG CREDENTIALS_FILE: {CREDENTIALS_FILE}")
-print(f"DEBUG GOOGLE_SHEET_ID: 1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY")
+print(f"DEBUG CREDENTIALS_FILE final: {CREDENTIALS_FILE}")
+print(f"DEBUG file exists: {os.path.exists(CREDENTIALS_FILE)}")
 
-# Получаем переменные окружения
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
-
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
-
 GOOGLE_SHEET_ID = "1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY"
 
 from datetime import time
