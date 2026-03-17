@@ -1,0 +1,186 @@
+import gspread
+from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID
+from datetime import datetime
+
+class GoogleSheetsStorage:
+    def __init__(self):
+        self.gc = gspread.service_account(filename=CREDENTIALS_FILE)
+        self.sh = self.gc.open_by_key(GOOGLE_SHEET_ID)
+
+    def check_today_metric(self, user_id, metric_key, logical_date):
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                return None
+
+            headers = [h.strip() for h in all_values[0]]
+            try:
+                date_idx = headers.index("Date")
+                metric_idx = headers.index(metric_key)
+            except ValueError:
+                return None
+
+            matching_values = []
+            for row in all_values[1:]:
+                if len(row) <= max(date_idx, metric_idx):
+                    continue
+                if row[date_idx].strip() == logical_date:
+                    val = row[metric_idx].strip()
+                    if val:
+                        matching_values.append(val)
+
+            if not matching_values:
+                return None
+
+            SUM_METRICS = ['productivity_hours', 'meditate_minutes', 'meals', 'smoked']
+            if metric_key in SUM_METRICS:
+                total = 0.0
+                for v in matching_values:
+                    try:
+                        total += float(v.replace(',', '.'))
+                    except ValueError:
+                        continue
+                return total if total > 0 else None
+
+            return matching_values[-1]
+
+        except Exception as e:
+            print(f"[SHEETS] Error in check_today_metric: {e}")
+            return None
+
+    def get_day_data(self, user_id, logical_date):
+        """Возвращает все метрики за день одним запросом, суммируя числовые."""
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                return {}
+
+            headers = [h.strip() for h in all_values[0]]
+            try:
+                date_idx = headers.index("Date")
+            except ValueError:
+                return {}
+
+            SUM_METRICS = ['productivity_hours', 'meditate_minutes', 'meals', 'smoked']
+
+            raw = {}
+            for row in all_values[1:]:
+                if len(row) <= date_idx:
+                    continue
+                if row[date_idx].strip() == logical_date:
+                    for i, val in enumerate(row):
+                        if i < len(headers) and val.strip():
+                            key = headers[i]
+                            if key not in raw:
+                                raw[key] = []
+                            raw[key].append(val.strip())
+
+            result = {}
+            for key, values in raw.items():
+                if key in SUM_METRICS:
+                    total = 0.0
+                    for v in values:
+                        try:
+                            total += float(v.replace(',', '.'))
+                        except ValueError:
+                            continue
+                    if total > 0:
+                        result[key] = str(total)
+                else:
+                    result[key] = values[-1]
+
+            return result
+
+        except Exception as e:
+            print(f"[SHEETS] Error in get_day_data: {e}")
+            return {}
+
+    def update_first_row_yesno(self, user_id, logical_date, metric_key, value):
+        """Обновляет yes-no значение в первой строке за день."""
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            all_values = worksheet.get_all_values()
+            if not all_values:
+                return False
+
+            headers = [h.strip() for h in all_values[0]]
+            try:
+                date_idx = headers.index("Date")
+                metric_idx = headers.index(metric_key)
+            except ValueError:
+                print(f"[SHEETS] update_first_row_yesno: column '{metric_key}' not found")
+                return False
+
+            for row_num, row in enumerate(all_values[1:], start=2):
+                if len(row) <= date_idx:
+                    continue
+                if row[date_idx].strip() == logical_date:
+                    worksheet.update_cell(row_num, metric_idx + 1, value)
+                    print(f"[SHEETS] updated {metric_key}={value} at row {row_num}")
+                    return True
+
+            print(f"[SHEETS] update_first_row_yesno: no row found for date={logical_date}")
+            return False
+
+        except Exception as e:
+            print(f"[SHEETS] Error in update_first_row_yesno: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def save_daily(self, user_id, data):
+        try:
+            worksheet = self.sh.get_worksheet(0)
+            headers = [h.strip() for h in worksheet.row_values(1)]
+
+            new_keys = [k for k in data if k not in headers]
+            if new_keys:
+                print(f"[SHEETS] adding new columns: {new_keys}")
+                for key in new_keys:
+                    headers.append(key)
+                    worksheet.update_cell(1, len(headers), key)
+
+            print(f"[SHEETS] headers={headers}")
+
+            row_to_append = [
+                "" if data.get(h) is None else str(data.get(h, ""))
+                for h in headers
+            ]
+
+            print(f"[SHEETS] row_to_append={row_to_append}")
+            worksheet.append_row(row_to_append, value_input_option='USER_ENTERED')
+            print(f"[SHEETS] append_row OK")
+
+        except Exception as e:
+            print(f"[SHEETS] ERROR in save_daily: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual"):
+        try:
+            try:
+                worksheet = self.sh.worksheet("Notes")
+            except Exception:
+                worksheet = self.sh.add_worksheet(title="Notes", rows="100", cols="20")
+                worksheet.append_row(["created_at", "format", "note", "duration"])
+
+            from datetime import timedelta
+            if telegram_ts:
+                created_str = (telegram_ts + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+            else:
+                created_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+            worksheet.append_row([
+                created_str,
+                "Voice" if is_voice else "Text",
+                text,
+                duration if duration else 0
+            ])
+            print(f"[SHEETS] note saved OK")
+
+        except Exception as e:
+            print(f"[SHEETS] Error saving note: {e}")
+            import traceback
+            traceback.print_exc()
