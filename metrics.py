@@ -6,11 +6,13 @@ MEASUREMENT_TYPES = {
         "format": "number",
         "min": 0,
         "max": 24,
+        "is_summable": True
     },
     "minutes": {
         "format": "number",
         "min": 0,
         "max": 999,
+        "is_summable": True
     },
     "scale_10": {
         "format": "number",
@@ -28,14 +30,23 @@ MEASUREMENT_TYPES = {
         "format": "number",
         "min": 0,
         "max": 20,
+        "is_summable": True
+    },
+    "time": {
+        "format": "time", # Changed from "text"
+        "placeholder": "HH:MM"
     }
 }
 
 # Метрики для daily опроса
 METRICS = {
-    "sleep_hours": {
-        "question": "Сколько часов ты спал?",
-        "measurement": "hours"
+    "sleep_time": {
+        "question": "Во сколько лёг спать?", # Removed (HH:MM)
+        "measurement": "time"
+    },
+    "wake_time": {
+        "question": "Во сколько проснулся?", # Removed (HH:MM)
+        "measurement": "time"
     },
     "productivity_hours": {
         "question": "Продуктивность (часов)?",
@@ -58,11 +69,19 @@ METRICS = {
         "measurement": "scale_10"
     },
     "communication": {
-        "question": "Качество общения?",
+        "question": "Раздражительность?",
+        "measurement": "scale_10"
+    },
+    "racing_thoughts": {
+        "question": "Ускоренные мысли и речь?",
         "measurement": "scale_10"
     },
     "smoked": {
-        "question": "Курил сегодня?",
+        "question": "Сколько косяков выкурил?",
+        "measurement": "count"
+    },
+    "modafinil": {
+        "question": "Принимал модафинил?",
         "measurement": "yes_no"
     },
     "yoga": {
@@ -82,3 +101,8 @@ def get_measurement_config(metric_key):
     metric = METRICS[metric_key]
     measurement_type = metric["measurement"]
     return MEASUREMENT_TYPES[measurement_type]
+
+def is_metric_summable(metric_key):
+    """Проверяет, является ли метрика суммируемой."""
+    cfg = get_measurement_config(metric_key)
+    return cfg.get("is_summable", False)

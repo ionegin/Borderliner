@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from datetime import datetime, timedelta
 
 from config import BOT_TOKEN, WEBHOOK_BASE_URL
-from metrics import METRICS, get_measurement_config
+from metrics import METRICS, get_measurement_config, is_metric_summable
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
 from handlers import handle_start
@@ -19,8 +19,7 @@ bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
 
-SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
-YES_NO_METRICS = ['smoked', 'yoga']
+# SUM_METRICS and YES_NO_METRICS removed locally. Summability is defined in metrics.py
 
 class Survey(StatesGroup):
     waiting_for_metrics = State()
@@ -82,12 +81,18 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
         ]])
         await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
+    elif cfg["format"] == "time":
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
+        ]])
+        await bot.send_message(chat_id, f"📊 {base_question} (формат ЧЧ:ММ)", reply_markup=kb)
+
     else:
         # number
         # scale_10 (energy, anxiety, communication) — обязательные, без кнопок
         is_scale = cfg.get("format") == "number" and cfg.get("max") == 10 and cfg.get("min") == 0
 
-        if key in SUM_METRICS:
+        if is_metric_summable(key):
             unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
             if existing_val is not None:
                 try:
@@ -154,8 +159,19 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     if cfg["format"] == "number":
         try:
             val = float(message.text.strip().replace(',', '.'))
-            if "min" in cfg and val < cfg["min"]:
-                raise ValueError()
+            
+            if is_metric_summable(key):
+                existing_state = data.get("existing", {})
+                current_total = 0.0
+                if existing_state.get(key):
+                    current_total = float(str(existing_state[key]).replace(',', '.'))
+                if current_total + val < 0:
+                    await message.answer(f"⚠️ Итоговое значение не может быть меньше 0 (сейчас {current_total}).")
+                    return
+            else:
+                if "min" in cfg and val < cfg["min"]:
+                    raise ValueError()
+                    
             if "max" in cfg and val > cfg["max"]:
                 raise ValueError()
             answers[key] = str(val)
@@ -163,6 +179,12 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
             await message.answer(f"⚠️ Введи число от {cfg.get('min', 0)} до {cfg.get('max', '∞')}.")
             return  # не двигаемся дальше
     elif cfg["format"] == "text":
+        answers[key] = message.text.strip()
+    elif cfg["format"] == "time":
+        import re
+        if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", message.text.strip()):
+            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08:00).")
+            return
         answers[key] = message.text.strip()
     else:
         # yes_no приходит через callback, не через текст — игнорируем

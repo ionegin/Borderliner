@@ -12,7 +12,7 @@ MENUS = {
     'yesno_edit': {
         'type': 'inline',
         'buttons': [
-            {'text': '🚬 Курение', 'action': 'ynedit:smoked'},
+            {'text': '💊 Модафинил', 'action': 'ynedit:modafinil'},
             {'text': '🧘 Йога', 'action': 'ynedit:yoga'},
             {'text': '❌ Отмена', 'action': 'ynedit:cancel'},
         ],

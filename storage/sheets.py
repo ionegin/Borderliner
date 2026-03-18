@@ -1,6 +1,7 @@
 import gspread
 from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID
 from datetime import datetime
+from metrics import is_metric_summable
 
 class GoogleSheetsStorage:
     def __init__(self):
@@ -33,8 +34,7 @@ class GoogleSheetsStorage:
             if not matching_values:
                 return None
 
-            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
-            if metric_key in SUM_METRICS:
+            if is_metric_summable(metric_key):
                 total = 0.0
                 for v in matching_values:
                     try:
@@ -63,8 +63,6 @@ class GoogleSheetsStorage:
             except ValueError:
                 return {}
 
-            SUM_METRICS = ['sleep_hours', 'productivity_hours', 'meditate_minutes', 'meals']
-
             raw = {}
             for row in all_values[1:]:
                 if len(row) <= date_idx:
@@ -79,7 +77,7 @@ class GoogleSheetsStorage:
 
             result = {}
             for key, values in raw.items():
-                if key in SUM_METRICS:
+                if is_metric_summable(key):
                     total = 0.0
                     for v in values:
                         try:
@@ -150,7 +148,7 @@ class GoogleSheetsStorage:
             ]
 
             print(f"[SHEETS] row_to_append={row_to_append}")
-            worksheet.append_row(row_to_append)
+            worksheet.append_row(row_to_append, value_input_option='USER_ENTERED')
             print(f"[SHEETS] append_row OK")
 
         except Exception as e:
