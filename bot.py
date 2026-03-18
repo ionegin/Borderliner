@@ -76,8 +76,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     existing_val = existing.get(key)
     is_first_survey = not existing  # первый опрос дня если existing пустой
 
-    # Пропуск sleep_hours (спрашивается отдельно) или уже отвеченных yes_no
-    while key == "sleep_hours" or (cfg.get("format") == "yes_no" and existing_val == "yes"):
+    # Пропуск sleep_hours (спрашивается отдельно) или уже отвеченных yes_no и времени
+    while key == "sleep_hours" or (cfg.get("format") == "yes_no" and existing_val == "yes") or (cfg.get("format") == "time" and existing_val is not None):
         idx += 1
         await state.update_data(current_idx=idx)
         if idx >= len(metrics_to_ask):
@@ -286,11 +286,20 @@ async def btn_add_meditate(message: types.Message, state: FSMContext):
     await message.answer("Сколько минут добавить к медитации?")
 
 @dp.message(F.text == "🎭 Опрос настроения")
-async def btn_mood_note(message: types.Message, state: FSMContext):
+async def btn_mood_survey(message: types.Message, state: FSMContext):
     save_user(message.chat.id)
-    await state.update_data(metric_key="mood_note")
-    await state.set_state(QuickAdd.waiting_for_value)
-    await message.answer("Что тебя беспокоит? (текст)")
+    l_date = get_logical_date(message.date)
+    existing = storage.get_day_data(message.chat.id, l_date)
+    mood_metrics = ["energy", "anxiety", "irritability", "racing_thoughts", "mood_note"]
+    await state.update_data(
+        metrics_to_ask=mood_metrics,
+        answers={},
+        current_idx=0,
+        logical_date=l_date,
+        existing=existing,
+    )
+    await state.set_state(Survey.waiting_for_metrics)
+    await ask_next_metric(message.chat.id, state, 0)
 
 @dp.message(QuickAdd.waiting_for_value, F.text)
 async def handle_quick_add(message: types.Message, state: FSMContext):

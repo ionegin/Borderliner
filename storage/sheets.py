@@ -1,7 +1,7 @@
 import gspread
 from config import CREDENTIALS_FILE, GOOGLE_SHEET_ID
 from datetime import datetime
-from metrics import is_metric_summable
+from metrics import is_metric_summable, get_measurement_config
 
 class GoogleSheetsStorage:
     def __init__(self):
@@ -86,6 +86,9 @@ class GoogleSheetsStorage:
                             continue
                     if total > 0:
                         result[key] = str(total)
+                elif get_measurement_config(key).get("format") == "yes_no":
+                    # Для yes_no логика: берем самое первое значение за день
+                    result[key] = values[0]
                 else:
                     result[key] = values[-1]
 
@@ -119,8 +122,15 @@ class GoogleSheetsStorage:
                     print(f"[SHEETS] updated {metric_key}={value} at row {row_num}")
                     return True
 
-            print(f"[SHEETS] update_first_row_yesno: no row found for date={logical_date}")
-            return False
+            print(f"[SHEETS] update_first_row_yesno: no row found for date={logical_date}. Creating new row.")
+            local_now = datetime.now()
+            # If no row exists, we append a new one
+            self.save_daily(user_id, {
+                "Date": logical_date,
+                "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
+                metric_key: value
+            })
+            return True
 
         except Exception as e:
             print(f"[SHEETS] Error in update_first_row_yesno: {e}")

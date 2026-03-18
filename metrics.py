@@ -60,10 +60,6 @@ METRICS = {
         "question": "Сколько минут медитировал?",
         "measurement": "minutes"
     },
-    "meals": {
-        "question": "Сколько раз ел?",
-        "measurement": "count"
-    },
     "energy": {
         "question": "Уровень энергии?",
         "measurement": "scale_10"
@@ -72,7 +68,7 @@ METRICS = {
         "question": "Уровень тревоги?",
         "measurement": "scale_10"
     },
-    "communication": {
+    "irritability": {
         "question": "Раздражительность?",
         "measurement": "scale_10"
     },
