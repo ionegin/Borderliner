@@ -6,13 +6,14 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from datetime import datetime, timedelta
 
-from config import BOT_TOKEN, WEBHOOK_BASE_URL
+from config import BOT_TOKEN, WEBHOOK_BASE_URL, REMINDERS
 from metrics import METRICS, get_measurement_config, is_metric_summable
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
 from handlers import handle_start
 from services.transcription import transcribe_voice
 import os
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
@@ -26,6 +27,22 @@ class Survey(StatesGroup):
 
 class YesNoEdit(StatesGroup):
     waiting_for_value = State()
+
+class QuickAdd(StatesGroup):
+    waiting_for_value = State()
+
+USERS_FILE = "users.txt"
+def get_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return {int(x.strip()) for x in f if x.strip()}
+    return set()
+
+def save_user(uid):
+    users = get_users()
+    if uid not in users:
+        with open(USERS_FILE, "a") as f:
+            f.write(f"{uid}\n")
 
 def get_logical_date(dt: datetime):
     local = dt + timedelta(hours=2)  # UTC+2
@@ -58,6 +75,18 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     existing = data.get("existing", {})
     existing_val = existing.get(key)
     is_first_survey = not existing  # первый опрос дня если existing пустой
+
+    # Пропуск sleep_hours (спрашивается отдельно) или уже отвеченных yes_no
+    while key == "sleep_hours" or (cfg.get("format") == "yes_no" and existing_val == "yes"):
+        idx += 1
+        await state.update_data(current_idx=idx)
+        if idx >= len(metrics_to_ask):
+            return False
+        key = metrics_to_ask[idx]
+        metric = METRICS[key]
+        cfg = get_measurement_config(key)
+        base_question = metric["question"]
+        existing_val = existing.get(key)
 
     if cfg["format"] == "yes_no":
         if existing_val is not None:
@@ -122,6 +151,7 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
     await state.clear()
     await handle_start(message)
 
@@ -131,11 +161,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def start_daily(message: types.Message, state: FSMContext):
     await _launch_survey(message, state)
 
-@dp.message(F.text == "📊 ПРОЙТИ ОПРОС")
+@dp.message(F.text.in_({"📊 ПРОЙТИ ОПРОС", "📊 Пройти опрос"}))
 async def daily_button(message: types.Message, state: FSMContext):
     await _launch_survey(message, state)
 
 async def _launch_survey(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
     l_date = get_logical_date(message.date)
     existing = storage.get_day_data(message.chat.id, l_date)
     print(f"[SURVEY] launching for {message.chat.id}, date={l_date}, existing={existing}")
@@ -182,10 +213,11 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
         answers[key] = message.text.strip()
     elif cfg["format"] == "time":
         import re
-        if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", message.text.strip()):
-            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08:00).")
+        val_str = message.text.strip().replace('.', ':').replace(' ', ':')
+        if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", val_str):
+            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08 00).")
             return
-        answers[key] = message.text.strip()
+        answers[key] = val_str
     else:
         # yes_no приходит через callback, не через текст — игнорируем
         await message.answer("⚠️ Используй кнопки для ответа.")
@@ -229,6 +261,60 @@ async def finish_survey(message: types.Message, state: FSMContext):
 
     await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=render_menu('main'))
     await state.clear()
+
+# ─── БЫСТРОЕ ПРИБАВЛЕНИЕ ──────────────────────────────────────────────────────
+
+@dp.message(F.text == "💤 Прибавить сон")
+async def btn_add_sleep(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
+    await state.update_data(metric_key="sleep_hours")
+    await state.set_state(QuickAdd.waiting_for_value)
+    await message.answer("Сколько часов добавить к сну?")
+
+@dp.message(F.text == "💼 Прибавить продуктивность")
+async def btn_add_prod(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
+    await state.update_data(metric_key="productivity_hours")
+    await state.set_state(QuickAdd.waiting_for_value)
+    await message.answer("Сколько часов добавить к продуктивности?")
+
+@dp.message(F.text == "🧘 Прибавить медитацию")
+async def btn_add_meditate(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
+    await state.update_data(metric_key="meditate_minutes")
+    await state.set_state(QuickAdd.waiting_for_value)
+    await message.answer("Сколько минут добавить к медитации?")
+
+@dp.message(F.text == "🎭 Опрос настроения")
+async def btn_mood_note(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
+    await state.update_data(metric_key="mood_note")
+    await state.set_state(QuickAdd.waiting_for_value)
+    await message.answer("Что тебя беспокоит? (текст)")
+
+@dp.message(QuickAdd.waiting_for_value, F.text)
+async def handle_quick_add(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    key = data["metric_key"]
+    val = message.text.strip()
+    
+    if is_metric_summable(key):
+        try:
+            val = str(float(val.replace(',', '.')))
+        except ValueError:
+            await message.answer("⚠️ Пожалуйста, введи число.")
+            return
+
+    local_now = message.date + timedelta(hours=2)
+    final_row = {
+        "Date": get_logical_date(message.date),
+        "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
+        key: val
+    }
+    storage.save_daily(message.chat.id, final_row)
+    await message.answer("✅ Данные добавлены!", reply_markup=render_menu('main'))
+    await state.clear()
+
 
 # ─── РЕДАКТИРОВАНИЕ YES-NO ───────────────────────────────────────────────────
 
@@ -328,5 +414,17 @@ async def handle_text_note(message: types.Message, state: FSMContext):
         )
         await message.answer("📝 Заметка сохранена.")
 
+async def send_reminder(rm_type):
+    for uid in get_users():
+        try:
+            await bot.send_message(uid, "⏰ Пора заполнить дневник! Жми /daily или 'Пройти опрос'", reply_markup=render_menu('main'))
+        except Exception as e:
+            print(f"Failed to send reminder to {uid}: {e}")
+
 if __name__ == "__main__":
+    scheduler = AsyncIOScheduler()
+    for rm in REMINDERS:
+        t = rm['time']
+        scheduler.add_job(send_reminder, 'cron', hour=t.hour, minute=t.minute, args=[rm['type']])
+    scheduler.start()
     dp.run_polling(bot)

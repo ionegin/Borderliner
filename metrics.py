@@ -40,6 +40,10 @@ MEASUREMENT_TYPES = {
 
 # Метрики для daily опроса
 METRICS = {
+    "sleep_hours": {
+        "question": "Дополнительный сон (часов)?",
+        "measurement": "hours"
+    },
     "sleep_time": {
         "question": "Во сколько лёг спать?", # Removed (HH:MM)
         "measurement": "time"
@@ -98,9 +102,11 @@ METRICS = {
 # Вспомогательная функция для получения конфига measurement
 def get_measurement_config(metric_key):
     """Возвращает полный конфиг measurement для метрики."""
+    if metric_key not in METRICS:
+        return {}
     metric = METRICS[metric_key]
     measurement_type = metric["measurement"]
-    return MEASUREMENT_TYPES[measurement_type]
+    return MEASUREMENT_TYPES.get(measurement_type, {})
 
 def is_metric_summable(metric_key):
     """Проверяет, является ли метрика суммируемой."""
