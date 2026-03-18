@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from datetime import datetime, timedelta
 
 from config import BOT_TOKEN, WEBHOOK_BASE_URL
-from metrics import METRICS, get_measurement_config
+from metrics import METRICS, get_measurement_config, is_metric_summable
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
 from handlers import handle_start
@@ -19,8 +19,7 @@ bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
 
-SUM_METRICS = ['productivity_hours', 'meditate_minutes', 'meals', 'smoked']
-YES_NO_METRICS = ['yoga']
+# SUM_METRICS and YES_NO_METRICS removed locally. Summability is defined in metrics.py
 
 class Survey(StatesGroup):
     waiting_for_metrics = State()
@@ -83,29 +82,18 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
         await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
     elif cfg["format"] == "time":
-        if existing_val is not None:
-            question = f"{base_question}\n(Сейчас: {existing_val})"
-            kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=f"✅ Оставить ({existing_val})", callback_data=f"m:{key}:keep")
-            ]])
-            await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
-        else:
-            await bot.send_message(chat_id, f"📊 {base_question} (формат ЧЧ:ММ)")
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
+        ]])
+        await bot.send_message(chat_id, f"📊 {base_question} (формат ЧЧ:ММ)", reply_markup=kb)
 
     else:
         # number
-        # scale_10 (energy, anxiety, communication, racing_thoughts) — обязательные, без кнопок
+        # scale_10 (energy, anxiety, communication) — обязательные, без кнопок
         is_scale = cfg.get("format") == "number" and cfg.get("max") == 10 and cfg.get("min") == 0
 
-        if key in SUM_METRICS:
-            if "hours" in key:
-                unit = "ч."
-            elif "minutes" in key:
-                unit = "мин."
-            elif key == "smoked":
-                unit = "шт."
-            else:
-                unit = "раз"
+        if is_metric_summable(key):
+            unit = "ч." if "hours" in key else ("мин." if "minutes" in key else "раз")
             if existing_val is not None:
                 try:
                     val_display = round(float(existing_val), 1)
@@ -171,45 +159,32 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
     if cfg["format"] == "number":
         try:
             val = float(message.text.strip().replace(',', '.'))
-            if key in SUM_METRICS:
-                existing = data.get("existing", {})
-                existing_val = existing.get(key)
-                if existing_val is not None:
-                    try:
-                        current_total = float(existing_val)
-                    except (ValueError, TypeError):
-                        current_total = 0
-                    if current_total + val < 0:
-                        await message.answer(f"⚠️ Нельзя вычесть больше, чем есть ({current_total}).")
-                        return
-                elif val < 0:
-                    await message.answer("⚠️ Первая запись не может быть отрицательной.")
+            
+            if is_metric_summable(key):
+                existing_state = data.get("existing", {})
+                current_total = 0.0
+                if existing_state.get(key):
+                    current_total = float(str(existing_state[key]).replace(',', '.'))
+                if current_total + val < 0:
+                    await message.answer(f"⚠️ Итоговое значение не может быть меньше 0 (сейчас {current_total}).")
                     return
-                if "max" in cfg and val > cfg["max"]:
-                    raise ValueError()
             else:
                 if "min" in cfg and val < cfg["min"]:
                     raise ValueError()
-                if "max" in cfg and val > cfg["max"]:
-                    raise ValueError()
+                    
+            if "max" in cfg and val > cfg["max"]:
+                raise ValueError()
             answers[key] = str(val)
         except ValueError:
             await message.answer(f"⚠️ Введи число от {cfg.get('min', 0)} до {cfg.get('max', '∞')}.")
-            return
-    elif cfg["format"] == "time":
-        text = message.text.strip().replace('.', ':').replace('-', ':')
-        try:
-            parts = text.split(':')
-            if len(parts) != 2:
-                raise ValueError()
-            h, m = int(parts[0]), int(parts[1])
-            if not (0 <= h <= 23 and 0 <= m <= 59):
-                raise ValueError()
-            answers[key] = f"{h:02d}:{m:02d}"
-        except ValueError:
-            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например 23:30)")
-            return
+            return  # не двигаемся дальше
     elif cfg["format"] == "text":
+        answers[key] = message.text.strip()
+    elif cfg["format"] == "time":
+        import re
+        if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", message.text.strip()):
+            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08:00).")
+            return
         answers[key] = message.text.strip()
     else:
         # yes_no приходит через callback, не через текст — игнорируем
@@ -248,24 +223,6 @@ async def finish_survey(message: types.Message, state: FSMContext):
         "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
     }
     final_row.update(data["answers"])
-
-    # Рассчитываем sleep_hours на основе sleep_time и wake_time
-    sleep_t = final_row.get("sleep_time")
-    if sleep_t is None:
-        sleep_t = data.get("existing", {}).get("sleep_time")
-    wake_t = final_row.get("wake_time")
-    if wake_t is None:
-        wake_t = data.get("existing", {}).get("wake_time")
-    if sleep_t and wake_t:
-        try:
-            sp = sleep_t.split(":")
-            wp = wake_t.split(":")
-            s_min = int(sp[0]) * 60 + int(sp[1])
-            w_min = int(wp[0]) * 60 + int(wp[1])
-            diff = (w_min - s_min) % (24 * 60)
-            final_row["sleep_hours"] = str(round(diff / 60, 1))
-        except (ValueError, IndexError):
-            pass
 
     print(f"[SURVEY] final_row={final_row}")
     storage.save_daily(message.chat.id, final_row)
