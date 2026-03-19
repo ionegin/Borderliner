@@ -127,7 +127,7 @@ class GoogleSheetsStorage:
             # If no row exists, we append a new one
             self.save_daily(user_id, {
                 "Date": logical_date,
-                "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
+                "created_at": str(local_now.strftime("%Y-%m-%d %H:%M")),
                 metric_key: value
             })
             return True
@@ -176,9 +176,9 @@ class GoogleSheetsStorage:
 
             from datetime import timedelta
             if telegram_ts:
-                created_str = (telegram_ts + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M")
+                created_str = str((telegram_ts + timedelta(hours=2)).strftime("%Y-%m-%d"))
             else:
-                created_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                created_str = str(datetime.now().strftime("%Y-%m-%d"))
 
             worksheet.append_row([
                 created_str,
