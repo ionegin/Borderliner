@@ -47,8 +47,8 @@ def save_user(uid):
 def get_logical_date(dt: datetime):
     local = dt + timedelta(hours=2)  # UTC+2
     if local.hour < 6:
-        return (local - timedelta(days=1)).strftime("%Y-%m-%d")
-    return local.strftime("%Y-%m-%d")
+        return str((local - timedelta(days=1)).strftime("%Y-%m-%d"))
+    return str(local.strftime("%Y-%m-%d"))
 
 def val_to_ru(val):
     if val == "yes": return "Да"
@@ -252,7 +252,7 @@ async def finish_survey(message: types.Message, state: FSMContext):
     local_now = message.date + timedelta(hours=2)  # UTC+2
     final_row = {
         "Date": logical_day,
-        "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
+        "created_at": str(local_now.strftime("%Y-%m-%d %H:%M")),
     }
     final_row.update(data["answers"])
 
@@ -317,7 +317,7 @@ async def handle_quick_add(message: types.Message, state: FSMContext):
     local_now = message.date + timedelta(hours=2)
     final_row = {
         "Date": get_logical_date(message.date),
-        "created_at": local_now.strftime("%Y-%m-%d %H:%M"),
+        "created_at": str(local_now.strftime("%Y-%m-%d %H:%M")),
         key: val
     }
     storage.save_daily(message.chat.id, final_row)
