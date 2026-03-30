@@ -287,8 +287,24 @@ async def finish_survey(message: types.Message, state: FSMContext):
     }
     final_row.update(answers)
 
+    # Инициализируем ai_score для нового опроса
+    if "ai_score" not in final_row:
+        final_row["ai_score"] = ""
+
     print(f"[SURVEY] final_row={final_row}")
     storage.save_daily(message.chat.id, final_row)
+
+    # Дополнительно сохраняем заметку о настроении в лист Notes
+    mood_note_text = answers.get("mood_note")
+    if mood_note_text and str(mood_note_text).strip():
+        storage.save_note(
+            user_id=message.chat.id,
+            text=str(mood_note_text).strip(),
+            is_voice=False,
+            telegram_ts=message.date if not is_past_edit else None,
+            source="mood_note",
+            created_at_override=created_at
+        )
 
     await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=render_menu('main'))
     await state.clear()

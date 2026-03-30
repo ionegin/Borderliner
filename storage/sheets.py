@@ -166,26 +166,56 @@ class GoogleSheetsStorage:
             import traceback
             traceback.print_exc()
 
-    def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual"):
+    def save_note(self, user_id, text, is_voice=False, duration=None, telegram_ts=None, uploaded_at=None, source="manual", created_at_override=None):
         try:
             try:
                 worksheet = self.sh.worksheet("Notes")
             except Exception:
                 worksheet = self.sh.add_worksheet(title="Notes", rows="100", cols="20")
-                worksheet.append_row(["created_at", "format", "note", "duration"])
+                # Создаем лист с новыми заголовками, если не было
+                worksheet.append_row(["created_at", "source", "note", "duration", "ai_score"])
 
             from datetime import timedelta
-            if telegram_ts:
+            if created_at_override:
+                created_str = created_at_override
+            elif telegram_ts:
                 created_str = str((telegram_ts + timedelta(hours=2)).strftime("%Y-%m-%d"))
             else:
                 created_str = str(datetime.now().strftime("%Y-%m-%d"))
 
-            worksheet.append_row([
-                created_str,
-                "Voice" if is_voice else "Text",
-                text,
-                duration if duration else 0
-            ])
+            source_val = source if source != "manual" else ("Voice" if is_voice else "Text")
+            
+            data = {
+                "created_at": created_str,
+                "source": source_val,
+                "note": text,
+                "duration": duration if duration else 0,
+                "ai_score": ""
+            }
+
+            headers = [h.strip() for h in worksheet.row_values(1)]
+            if not headers:
+                headers = ["created_at", "source", "note", "duration", "ai_score"]
+                worksheet.append_row(headers)
+            elif "format" in headers and "source" not in headers:
+                # Переименовываем старую колонку format в source
+                idx = headers.index("format")
+                headers[idx] = "source"
+                worksheet.update_cell(1, idx + 1, "source")
+                
+            new_keys = [k for k in data if k not in headers]
+            if new_keys:
+                print(f"[SHEETS] adding new columns to Notes: {new_keys}")
+                for key in new_keys:
+                    headers.append(key)
+                    worksheet.update_cell(1, len(headers), key)
+
+            row_to_append = [
+                "" if data.get(h) is None else str(data.get(h, ""))
+                for h in headers
+            ]
+
+            worksheet.append_row(row_to_append, value_input_option='USER_ENTERED')
             print(f"[SHEETS] note saved OK")
 
         except Exception as e:
