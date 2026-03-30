@@ -210,10 +210,7 @@ class GoogleSheetsStorage:
                     headers.append(key)
                     worksheet.update_cell(1, len(headers), key)
 
-            row_to_append = [
-                "" if data.get(h) is None else str(data.get(h, ""))
-                for h in headers
-            ]
+            row_to_append = [str(data.get(h, "")) for h in headers]
 
             worksheet.append_row(row_to_append, value_input_option='USER_ENTERED')
             print(f"[SHEETS] note saved OK")
