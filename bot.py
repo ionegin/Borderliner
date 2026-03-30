@@ -20,8 +20,6 @@ bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
 
-# SUM_METRICS and YES_NO_METRICS removed locally. Summability is defined in metrics.py
-
 class Survey(StatesGroup):
     waiting_for_metrics = State()
 
@@ -61,6 +59,20 @@ def opposite_val(val):
 def opposite_ru(val):
     return "Нет" if val == "yes" else "Да"
 
+def calc_sleep_hours(sleep_time: str, wake_time: str) -> float | None:
+    """Вычисляет часы сна из строк ЧЧ:ММ. Обрабатывает переход через полночь."""
+    try:
+        sh, sm = map(int, sleep_time.replace('.', ':').split(':'))
+        wh, wm = map(int, wake_time.replace('.', ':').split(':'))
+        sleep_minutes = sh * 60 + sm
+        wake_minutes = wh * 60 + wm
+        diff = wake_minutes - sleep_minutes
+        if diff < 0:
+            diff += 24 * 60  # переход через полночь
+        return round(diff / 60, 2)
+    except Exception:
+        return None
+
 async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
     data = await state.get_data()
     metrics_to_ask = data["metrics_to_ask"]
@@ -74,9 +86,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
 
     existing = data.get("existing", {})
     existing_val = existing.get(key)
-    is_first_survey = not existing  # первый опрос дня если existing пустой
 
-    # Пропуск sleep_hours (спрашивается отдельно) или уже отвеченных yes_no и времени
+    # sleep_hours пропускаем — вычисляется автоматически из sleep_time/wake_time
     while key == "sleep_hours" or (cfg.get("format") == "yes_no" and existing_val == "yes") or (cfg.get("format") == "time" and existing_val is not None):
         idx += 1
         await state.update_data(current_idx=idx)
@@ -90,13 +101,11 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
 
     if cfg["format"] == "yes_no":
         if existing_val is not None:
-            # повторный опрос — показываем текущее + переключатель
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text=f"✅ Оставить ({val_to_ru(existing_val)})", callback_data=f"m:{key}:keep"),
                 InlineKeyboardButton(text=f"🔄 → {opposite_ru(existing_val)}", callback_data=f"m:{key}:{opposite_val(existing_val)}"),
             ]])
         else:
-            # первый опрос — без пропуска
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="Да", callback_data=f"m:{key}:yes"),
                 InlineKeyboardButton(text="Нет", callback_data=f"m:{key}:no"),
@@ -104,7 +113,6 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
         await bot.send_message(chat_id, f"📊 {base_question}", reply_markup=kb)
 
     elif cfg["format"] == "text":
-        # текстовое поле — пропуск всегда доступен
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
         ]])
@@ -117,8 +125,6 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
         await bot.send_message(chat_id, f"📊 {base_question} (формат ЧЧ:ММ)", reply_markup=kb)
 
     else:
-        # number
-        # scale_10 (energy, anxiety, communication) — обязательные, без кнопок
         is_scale = cfg.get("format") == "number" and cfg.get("max") == 10 and cfg.get("min") == 0
 
         if is_metric_summable(key):
@@ -136,10 +142,8 @@ async def ask_next_metric(chat_id: int, state: FSMContext, idx: int):
             ]])
             await bot.send_message(chat_id, f"📊 {question}", reply_markup=kb)
         elif is_scale:
-            # обязательные — без кнопок, просто вопрос
             await bot.send_message(chat_id, f"📊 {base_question} (0–10)")
         else:
-            # прочие number — с пропуском
             kb = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="Пропустить", callback_data=f"m:{key}:skip")
             ]])
@@ -208,18 +212,17 @@ async def handle_metrics_text(message: types.Message, state: FSMContext):
             answers[key] = str(val)
         except ValueError:
             await message.answer(f"⚠️ Введи число от {cfg.get('min', 0)} до {cfg.get('max', '∞')}.")
-            return  # не двигаемся дальше
+            return
     elif cfg["format"] == "text":
         answers[key] = message.text.strip()
     elif cfg["format"] == "time":
         import re
         val_str = message.text.strip().replace('.', ':').replace(' ', ':')
         if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", val_str):
-            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08 00).")
+            await message.answer("⚠️ Введи время в формате ЧЧ:ММ (например, 23:30 или 08:00).")
             return
         answers[key] = val_str
     else:
-        # yes_no приходит через callback, не через текст — игнорируем
         await message.answer("⚠️ Используй кнопки для ответа.")
         return
 
@@ -245,16 +248,26 @@ async def handle_metrics_callback(callback: CallbackQuery, state: FSMContext):
 async def finish_survey(message: types.Message, state: FSMContext):
     data = await state.get_data()
     logical_day = data.get("logical_date")
+    answers = data["answers"]
+
+    # Вычисляем sleep_hours из sleep_time и wake_time
+    sleep_time = answers.get("sleep_time")
+    wake_time = answers.get("wake_time")
+    if sleep_time and wake_time:
+        hours = calc_sleep_hours(sleep_time, wake_time)
+        if hours is not None:
+            answers["sleep_hours"] = str(hours)
+            print(f"[SURVEY] sleep_hours calculated: {hours}")
 
     print(f"[SURVEY] logical_day={logical_day}")
-    print(f"[SURVEY] raw answers={data['answers']}")
+    print(f"[SURVEY] raw answers={answers}")
 
-    local_now = message.date + timedelta(hours=2)  # UTC+2
+    local_now = message.date + timedelta(hours=2)
     final_row = {
         "Date": logical_day,
         "created_at": str(local_now.strftime("%Y-%m-%d %H:%M")),
     }
-    final_row.update(data["answers"])
+    final_row.update(answers)
 
     print(f"[SURVEY] final_row={final_row}")
     storage.save_daily(message.chat.id, final_row)
@@ -262,28 +275,50 @@ async def finish_survey(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Данные сохранены за {logical_day}!", reply_markup=render_menu('main'))
     await state.clear()
 
+# ─── МЕНЮ РЕДАКТИРОВАТЬ ───────────────────────────────────────────────────────
+
+@dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
+async def edit_menu(message: types.Message):
+    save_user(message.chat.id)
+    await message.answer("✏️ Что редактируем?", reply_markup=render_menu('edit'))
+
+@dp.message(F.text == "🔙 Назад")
+async def back_to_main(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню", reply_markup=render_menu('main'))
+
 # ─── БЫСТРОЕ ПРИБАВЛЕНИЕ ──────────────────────────────────────────────────────
+
+async def _start_quick_add(message: types.Message, state: FSMContext, metric_key: str):
+    save_user(message.chat.id)
+    l_date = get_logical_date(message.date)
+    existing = storage.get_day_data(message.chat.id, l_date)
+    current_val = existing.get(metric_key)
+
+    unit = "ч." if "hours" in metric_key else ("мин." if "minutes" in metric_key else "раз")
+    if current_val is not None:
+        try:
+            display = round(float(str(current_val).replace(',', '.')), 1)
+        except (ValueError, TypeError):
+            display = current_val
+    else:
+        display = 0
+
+    await state.update_data(metric_key=metric_key)
+    await state.set_state(QuickAdd.waiting_for_value)
+    await message.answer(f"Сейчас: {display} {unit}. Сколько прибавить?")
 
 @dp.message(F.text == "💤 Прибавить сон")
 async def btn_add_sleep(message: types.Message, state: FSMContext):
-    save_user(message.chat.id)
-    await state.update_data(metric_key="sleep_hours")
-    await state.set_state(QuickAdd.waiting_for_value)
-    await message.answer("Сколько часов добавить к сну?")
+    await _start_quick_add(message, state, "sleep_hours")
 
 @dp.message(F.text == "💼 Прибавить продуктивность")
 async def btn_add_prod(message: types.Message, state: FSMContext):
-    save_user(message.chat.id)
-    await state.update_data(metric_key="productivity_hours")
-    await state.set_state(QuickAdd.waiting_for_value)
-    await message.answer("Сколько часов добавить к продуктивности?")
+    await _start_quick_add(message, state, "productivity_hours")
 
 @dp.message(F.text == "🧘 Прибавить медитацию")
 async def btn_add_meditate(message: types.Message, state: FSMContext):
-    save_user(message.chat.id)
-    await state.update_data(metric_key="meditate_minutes")
-    await state.set_state(QuickAdd.waiting_for_value)
-    await message.answer("Сколько минут добавить к медитации?")
+    await _start_quick_add(message, state, "meditate_minutes")
 
 @dp.message(F.text == "🎭 Опрос настроения")
 async def btn_mood_survey(message: types.Message, state: FSMContext):
@@ -321,13 +356,12 @@ async def handle_quick_add(message: types.Message, state: FSMContext):
         key: val
     }
     storage.save_daily(message.chat.id, final_row)
-    await message.answer("✅ Данные добавлены!", reply_markup=render_menu('main'))
+    await message.answer("✅ Данные добавлены!", reply_markup=render_menu('edit'))
     await state.clear()
-
 
 # ─── РЕДАКТИРОВАНИЕ YES-NO ───────────────────────────────────────────────────
 
-@dp.message(F.text == "✏️ РЕДАКТИРОВАТЬ")
+@dp.message(F.text == "💊 Модафинил / 🧘 Йога")
 async def yesno_edit_button(message: types.Message):
     await message.answer("✏️ Что редактируем?", reply_markup=render_menu('yesno_edit'))
 
@@ -337,7 +371,7 @@ async def handle_yesno_edit_select(callback: CallbackQuery, state: FSMContext):
 
     if action == "cancel":
         await callback.message.edit_text("❌ Отменено")
-        await bot.send_message(callback.message.chat.id, "Главное меню", reply_markup=render_menu('main'))
+        await bot.send_message(callback.message.chat.id, "Редактировать", reply_markup=render_menu('edit'))
         return
 
     metric_key = action
@@ -375,7 +409,7 @@ async def handle_yesno_edit_val(callback: CallbackQuery, state: FSMContext):
         storage.update_first_row_yesno(callback.message.chat.id, logical_day, metric_key, value)
         await callback.message.edit_text(f"✅ {METRICS[metric_key]['question']} → {val_to_ru(value)}")
 
-    await bot.send_message(callback.message.chat.id, "Главное меню", reply_markup=render_menu('main'))
+    await bot.send_message(callback.message.chat.id, "Редактировать", reply_markup=render_menu('edit'))
     await state.clear()
     await callback.answer()
 
