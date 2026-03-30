@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from datetime import datetime, timedelta
 
-from config import BOT_TOKEN, WEBHOOK_BASE_URL, REMINDERS
+from config import BOT_TOKEN, WEBHOOK_BASE_URL
 from metrics import METRICS, get_measurement_config, is_metric_summable
 from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
