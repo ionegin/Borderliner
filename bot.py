@@ -12,8 +12,10 @@ from storage.sheets import GoogleSheetsStorage
 from menu import render_menu
 from handlers import handle_start
 from services.transcription import transcribe_voice
+from services.notifications import setup_notifications_v2
 import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from aiogram_calendar import SimpleCalendar, SimpleCalendarCallback
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
@@ -28,6 +30,9 @@ class YesNoEdit(StatesGroup):
 
 class QuickAdd(StatesGroup):
     waiting_for_value = State()
+
+class PastEdit(StatesGroup):
+    waiting_for_date = State()
 
 USERS_FILE = "users.txt"
 def get_users():
@@ -169,9 +174,15 @@ async def start_daily(message: types.Message, state: FSMContext):
 async def daily_button(message: types.Message, state: FSMContext):
     await _launch_survey(message, state)
 
-async def _launch_survey(message: types.Message, state: FSMContext):
+async def _launch_survey(message: types.Message, state: FSMContext, date_override: str = None):
     save_user(message.chat.id)
-    l_date = get_logical_date(message.date)
+    if date_override:
+        l_date = date_override
+        is_past_edit = True
+    else:
+        l_date = get_logical_date(message.date)
+        is_past_edit = False
+        
     existing = storage.get_day_data(message.chat.id, l_date)
     print(f"[SURVEY] launching for {message.chat.id}, date={l_date}, existing={existing}")
     await state.update_data(
@@ -180,6 +191,7 @@ async def _launch_survey(message: types.Message, state: FSMContext):
         current_idx=0,
         logical_date=l_date,
         existing=existing,
+        is_past_edit=is_past_edit,
     )
     await state.set_state(Survey.waiting_for_metrics)
     await ask_next_metric(message.chat.id, state, 0)
@@ -263,9 +275,15 @@ async def finish_survey(message: types.Message, state: FSMContext):
     print(f"[SURVEY] raw answers={answers}")
 
     local_now = message.date + timedelta(hours=2)
+    is_past_edit = data.get("is_past_edit", False)
+    if is_past_edit:
+        created_at = f"{logical_day} 12:01"
+    else:
+        created_at = str(local_now.strftime("%Y-%m-%d %H:%M"))
+        
     final_row = {
         "Date": logical_day,
-        "created_at": str(local_now.strftime("%Y-%m-%d %H:%M")),
+        "created_at": created_at,
     }
     final_row.update(answers)
 
@@ -457,17 +475,55 @@ async def handle_text_note(message: types.Message, state: FSMContext):
         )
         await message.answer("📝 Заметка сохранена.")
 
-async def send_reminder(rm_type):
-    for uid in get_users():
-        try:
-            await bot.send_message(uid, "⏰ Пора заполнить дневник! Жми /daily или 'Пройти опрос'", reply_markup=render_menu('main'))
-        except Exception as e:
-            print(f"Failed to send reminder to {uid}: {e}")
+# ─── ДОПОЛНИТЕЛЬНЫЕ ОБРАБОТЧИКИ ──────────────────────────────────────────────
+
+@dp.message(F.text == "📆 Запись в прошлом")
+async def btn_past_record(message: types.Message, state: FSMContext):
+    save_user(message.chat.id)
+    await state.set_state(PastEdit.waiting_for_date)
+    await message.answer("Выбери дату:", reply_markup=await SimpleCalendar().start_calendar())
+
+@dp.callback_query(SimpleCalendarCallback.filter(), PastEdit.waiting_for_date)
+async def process_simple_calendar(callback_query: CallbackQuery, callback_data: SimpleCalendarCallback, state: FSMContext):
+    selected, date = await SimpleCalendar().process_selection(callback_query, callback_data)
+    if selected:
+        target_date = date.strftime("%Y-%m-%d")
+        if date.date() > datetime.now().date():
+            await callback_query.message.answer("⚠️ Нельзя выбирать дату в будущем!")
+            return
+        
+        await state.update_data(target_date=target_date)
+        existing = storage.get_day_data(callback_query.message.chat.id, target_date)
+        
+        text = f"📅 Данные за {target_date}:\n\n"
+        if existing:
+            for k, v in existing.items():
+                if k not in ["Date", "created_at"]:
+                    text += f"• {k}: {v}\n"
+        else:
+            text += "Записей пока нет."
+        
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔄 Отредактировать / Заполнить", callback_data=f"past_edit:{target_date}"),
+            InlineKeyboardButton(text="🔙 Назад", callback_data="past_cancel"),
+        ]])
+        await callback_query.message.edit_text(text, reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("past_edit:"))
+async def handle_past_edit_start(callback: CallbackQuery, state: FSMContext):
+    date_str = callback.data.split(":")[1]
+    await _launch_survey(callback.message, state, date_override=date_str)
+    await callback.answer()
+
+@dp.callback_query(F.data == "past_cancel")
+async def handle_past_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("❌ Отменено.")
+    await bot.send_message(callback.message.chat.id, "Редактировать", reply_markup=render_menu('edit'))
+    await callback.answer()
 
 if __name__ == "__main__":
     scheduler = AsyncIOScheduler()
-    for rm in REMINDERS:
-        t = rm['time']
-        scheduler.add_job(send_reminder, 'cron', hour=t.hour, minute=t.minute, args=[rm['type']])
+    setup_notifications_v2(scheduler, bot, get_users)
     scheduler.start()
     dp.run_polling(bot)

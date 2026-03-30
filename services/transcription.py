@@ -20,6 +20,7 @@ def _transcribe_sync(file_path: str):
         transcription = client.audio.transcriptions.create(
             file=(file_path, f.read()),
             model="whisper-large-v3",
-            response_format="text"
+            response_format="text",
+            language="ru"
         )
     return transcription

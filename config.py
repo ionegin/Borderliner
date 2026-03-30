@@ -32,9 +32,3 @@ BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_KEY")
 WEBHOOK_BASE_URL = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBHOOK_URL") or os.getenv("SPACE_HOST", "")
 GOOGLE_SHEET_ID = "1a6fCFKO2y6r04Z2U8N495nzN1S9-SEas_21ldnqFBcY"
-
-from datetime import time
-REMINDERS = [
-    {'time': time(8, 0), 'type': 'morning'},
-    {'time': time(20, 45), 'type': 'evening'},
-]

@@ -3,7 +3,8 @@ print("TEST RUN MY APP")
 import os
 import asyncio
 from aiohttp import web
-from bot import bot, dp
+from bot import bot, dp, get_users
+from services.notifications import setup_notifications_v2
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import BOT_TOKEN
 
