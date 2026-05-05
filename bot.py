@@ -286,6 +286,7 @@ async def finish_survey(message: types.Message, state: FSMContext):
         "created_at": created_at,
     }
     final_row.update(answers)
+    final_row.pop("mood_note", None)  # Заметки хранятся только в листе Notes
 
     # Инициализируем ai_score для нового опроса
     if "ai_score" not in final_row:

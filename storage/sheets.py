@@ -183,7 +183,7 @@ class GoogleSheetsStorage:
             else:
                 created_str = str(datetime.now().strftime("%Y-%m-%d"))
 
-            source_val = source if source != "manual" else ("Voice" if is_voice else "Text")
+            source_val = source if source != "manual" else ("voice_note" if is_voice else "text_note")
             
             data = {
                 "created_at": created_str,
