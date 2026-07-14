@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -21,6 +22,40 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 storage = GoogleSheetsStorage()
+
+scheduler = None
+scheduler_initialized = False
+
+
+def get_scheduler():
+    global scheduler, scheduler_initialized
+    if scheduler is None:
+        scheduler = AsyncIOScheduler()
+    if not scheduler_initialized:
+        setup_notifications_v2(scheduler, bot, get_users)
+        scheduler_initialized = True
+    return scheduler
+
+
+def ensure_scheduler_started():
+    scheduler_instance = get_scheduler()
+    if not scheduler_instance.running:
+        scheduler_instance.start()
+    return scheduler_instance
+
+
+async def run_bot():
+    if not BOT_TOKEN or bot is None:
+        raise RuntimeError("TELEGRAM_TOKEN is not configured")
+
+    scheduler_instance = ensure_scheduler_started()
+    try:
+        me = await bot.get_me()
+        logging.info("Bot connected to Telegram as @%s", me.username)
+        await dp.start_polling(bot, handle_signals=False)
+    finally:
+        if scheduler_instance.running:
+            scheduler_instance.shutdown(wait=False)
 
 class Survey(StatesGroup):
     waiting_for_metrics = State()
@@ -540,7 +575,4 @@ async def handle_past_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 if __name__ == "__main__":
-    scheduler = AsyncIOScheduler()
-    setup_notifications_v2(scheduler, bot, get_users)
-    scheduler.start()
-    dp.run_polling(bot)
+    asyncio.run(run_bot())
